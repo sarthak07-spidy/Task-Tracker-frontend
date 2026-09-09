@@ -1,5 +1,5 @@
 import { useState, useEffect } from 'react'
-import { useNavigate, Link } from 'react-router-dom'
+import { useNavigate, Link, useSearchParams } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import { ArrowLeft } from 'lucide-react'
 import api from '../lib/api'
@@ -17,18 +17,24 @@ import type {
 } from '../lib/types'
 import Spinner from '../components/ui/Spinner'
 import SearchableSelect from '../components/ui/SearchableSelect'
-import Parallax3DCard from '../components/ui/Parallax3DCard'
 
 const ease = [0.22, 1, 0.36, 1] as const
 
 export default function CreateTicket() {
   const navigate = useNavigate()
   const { toast } = useToast()
+  const [searchParams] = useSearchParams()
+
+  const queryProjectId = searchParams.get('projectId')
 
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [dueDate, setDueDate] = useState('')
-  const [projectId, setProjectId] = useState<number | ''>('')
+  const [projectId, setProjectId] = useState<number | ''>(() => {
+    if (queryProjectId) return Number(queryProjectId)
+    const saved = localStorage.getItem('t_tracker_selected_project_id')
+    return saved ? Number(saved) : ''
+  })
   const [assignedToUserId, setAssignedToUserId] = useState<number | ''>('')
   const [priority, setPriority] = useState('')
   const [category, setCategory] = useState('')
@@ -41,75 +47,132 @@ export default function CreateTicket() {
   // Data for dropdowns
   const [projects, setProjects] = useState<Project[]>([])
   const [members, setMembers] = useState<ProjectMember[]>([])
+  const [membersLoading, setMembersLoading] = useState(false)
 
   useEffect(() => {
-    api
-      .get<ApiResponse<{ projects?: Project[] } | Project[]>>('/projects/all', {
-        params: { pageSize: 100 },
-      })
-      .then(({ data }) => {
-        const d = (data?.success && data?.data) ? data.data : data
-        if (Array.isArray(d)) {
-          setProjects(d)
-        } else if (d && 'projects' in d && Array.isArray(d.projects)) {
-          setProjects(d.projects)
+    async function loadProjects() {
+      try {
+        let res
+        try {
+          res = await api.get('/Projects/all', { params: { pageSize: 100 } })
+        } catch {
+          res = await api.get('/projects/all', { params: { pageSize: 100 } })
         }
-      })
-      .catch(() => {})
+        const data = res?.data
+        const d = (data?.success && data?.data) ? data.data : data
+        const pList = Array.isArray(d) ? d : d?.projects || d?.data || []
+        if (Array.isArray(pList)) {
+          setProjects(pList)
+        }
+      } catch (err) {
+        console.error('Failed to load projects in CreateTicket', err)
+      }
+    }
+    loadProjects()
   }, [])
 
   useEffect(() => {
     async function loadMembers() {
-      // First attempt assignable members endpoint
-      if (projectId) {
+      if (!projectId) {
+        setMembers([])
+        setAssignedToUserId('')
+        return
+      }
+
+      setMembersLoading(true)
+
+      // 1. Try dedicated project members endpoint: GET /api/projects/{projectId}/members
+      try {
+        let res
         try {
-          const { data } = await api.get(
-            `/projects/${projectId}/members/assignable/members`,
-          )
-          const list = data?.success ? data.data : data
-          if (Array.isArray(list) && list.length > 0) {
-            setMembers(list)
+          res = await api.get(`/projects/${projectId}/members`)
+        } catch {
+          res = await api.get(`/Projects/${projectId}/members`)
+        }
+        const data = res?.data
+        const raw = (data?.success && data?.data) ? data.data : (Array.isArray(data) ? data : data?.members || data?.data || [])
+        if (Array.isArray(raw) && raw.length > 0) {
+          const mapped = raw.map((m: Record<string, unknown>) => {
+            const uId = (m.userId as number) ?? (m.id as number)
+            const name = ((m.userName as string) || `${(m.firstName as string) ?? ''} ${(m.lastName as string) ?? ''}`).trim() || (m.email as string) || `Member #${uId}`
+            return {
+              userId: Number(uId),
+              firstName: name,
+              lastName: '',
+              email: (m.email as string) || '',
+              role: (m.role as string) || (m.designation as string) || 'Member',
+              designation: (m.designation as string) || '',
+              department: (m.department as string) || '',
+            }
+          })
+          setMembers(mapped)
+          setMembersLoading(false)
+          return
+        }
+      } catch (err) {
+        console.warn('Direct project members failed, trying fallback', err)
+      }
+
+      // 2. Try assignable members endpoint: GET /api/projects/{projectId}/members/assignable/members
+      try {
+        let res
+        try {
+          res = await api.get(`/projects/${projectId}/members/assignable/members`)
+        } catch {
+          res = await api.get(`/Projects/${projectId}/members/assignable/members`)
+        }
+        const data = res?.data
+        const list = (data?.success && data?.data) ? data.data : (Array.isArray(data) ? data : data?.members || data?.data || [])
+        if (Array.isArray(list) && list.length > 0) {
+          const mapped = list.map((m: Record<string, unknown>) => {
+            const uId = (m.userId as number) ?? (m.id as number)
+            const name = ((m.userName as string) || `${(m.firstName as string) ?? ''} ${(m.lastName as string) ?? ''}`).trim() || (m.email as string) || `Member #${uId}`
+            return {
+              userId: Number(uId),
+              firstName: name,
+              lastName: '',
+              email: (m.email as string) || '',
+              role: (m.role as string) || (m.designation as string) || 'Member',
+              designation: (m.designation as string) || '',
+              department: (m.department as string) || '',
+            }
+          })
+          setMembers(mapped)
+          setMembersLoading(false)
+          return
+        }
+      } catch (err) {
+        console.warn('Assignable members failed', err)
+      }
+
+      // 3. Try localStorage cache for this project's members
+      try {
+        const cached = localStorage.getItem(`t_project_members_${projectId}`)
+        if (cached) {
+          const parsed = JSON.parse(cached)
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            setMembers(
+              parsed.map((m: Record<string, unknown>) => ({
+                userId: (m.userId as number) || (m.id as number),
+                firstName: ((m.userName as string) || `${(m.firstName as string) ?? ''}`).trim() || `User #${m.userId || m.id}`,
+                lastName: '',
+                email: (m.email as string) || '',
+                role: (m.role as string) || 'Member',
+                designation: (m.designation as string) || '',
+                department: (m.department as string) || '',
+              }))
+            )
+            setMembersLoading(false)
             return
           }
-        } catch {
-          // fallback to /Users/employees
-        }
-      }
-
-      // Resilient fallback: fetch from /Users/employees
-      try {
-        const empRes = await api.get('/Users/employees')
-        const raw = empRes.data?.success ? empRes.data.data : empRes.data
-        if (Array.isArray(raw)) {
-          let targetList = raw
-          if (projectId) {
-            const matching = raw.filter((emp: { assignedProjects?: Array<{ projectId: number }> }) =>
-              emp.assignedProjects?.some((p) => p.projectId === Number(projectId)),
-            )
-            // If some employees are assigned to this project, show them; otherwise show all employees
-            if (matching.length > 0) {
-              targetList = matching
-            }
-          }
-
-          setMembers(
-            targetList.map((u: { id: number; fullName?: string; email: string; userType?: string; designation?: string; department?: string }) => {
-              const parts = (u.fullName ?? '').split(' ')
-              return {
-                userId: u.id,
-                firstName: parts[0] || '',
-                lastName: parts.slice(1).join(' ') || '',
-                email: u.email,
-                role: u.userType || u.designation || 'Employee',
-                designation: u.designation,
-                department: u.department,
-              }
-            }),
-          )
         }
       } catch {
-        setMembers([])
+        // ignore
       }
+
+      // Only project members allowed
+      setMembers([])
+      setMembersLoading(false)
     }
 
     loadMembers()
@@ -173,14 +236,13 @@ export default function CreateTicket() {
         </p>
       </motion.div>
 
-      <Parallax3DCard intensity={7} glare={true} depthEffect={true}>
-        <motion.form
-          onSubmit={onSubmit}
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ duration: 0.5, delay: 0.1, ease }}
-          className="space-y-5 rounded-2xl border border-line bg-ink-soft p-6 crazy-form-container"
-        >
+      <motion.form
+        onSubmit={onSubmit}
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        transition={{ duration: 0.5, delay: 0.1, ease }}
+        className="space-y-5 rounded-2xl border border-line bg-ink-soft p-6 crazy-form-container shadow-xl shadow-ink/40"
+      >
         {/* Title */}
         <FormField label="Title *">
           <input
@@ -204,8 +266,8 @@ export default function CreateTicket() {
           />
         </FormField>
 
-        {/* Due Date + Project */}
-        <div className="grid grid-cols-2 gap-4">
+        {/* Due Date + Project — Highest z-index so dropdown drops over lower rows */}
+        <div className="grid grid-cols-2 gap-4 relative z-40">
           <FormField label="Due Date *">
             <input
               required
@@ -224,7 +286,10 @@ export default function CreateTicket() {
                 badge: p.status ?? undefined,
               }))}
               value={projectId}
-              onChange={(val) => setProjectId(val ? Number(val) : '')}
+              onChange={(val) => {
+                setProjectId(val ? Number(val) : '')
+                setAssignedToUserId('')
+              }}
               placeholder="Select project..."
               searchPlaceholder="Type project name..."
             />
@@ -232,7 +297,7 @@ export default function CreateTicket() {
         </div>
 
         {/* Priority + Category */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4 relative z-30">
           <FormField label="Priority">
             <select
               value={priority}
@@ -263,24 +328,35 @@ export default function CreateTicket() {
           </FormField>
         </div>
 
-        {/* Assignee */}
-        <FormField label="Assign To">
-          <SearchableSelect
-            options={members.map((m) => ({
-              id: m.userId,
-              label: `${m.firstName} ${m.lastName}`.trim() || m.email,
-              sublabel: m.email,
-              badge: m.role || m.department,
-            }))}
-            value={assignedToUserId}
-            onChange={(val) => setAssignedToUserId(val ? Number(val) : '')}
-            placeholder="Search and select team member..."
-            searchPlaceholder="Type member name (e.g. Sarthak)..."
-          />
-        </FormField>
+        {/* Assignee — Relative z-20 */}
+        <div className="relative z-20">
+          <FormField label="Assign To (Project Members Only)">
+            <SearchableSelect
+              options={members.map((m) => ({
+                id: m.userId,
+                label: m.firstName || m.email,
+                sublabel: m.email,
+                badge: m.role || m.department,
+              }))}
+              value={assignedToUserId}
+              onChange={(val) => setAssignedToUserId(val ? Number(val) : '')}
+              placeholder={
+                !projectId
+                  ? 'Select a project first'
+                  : membersLoading
+                  ? 'Loading project members...'
+                  : members.length === 0
+                  ? 'No members in this project yet'
+                  : 'Search and select project member...'
+              }
+              searchPlaceholder="Type member name..."
+              disabled={!projectId || membersLoading}
+            />
+          </FormField>
+        </div>
 
         {/* Sprint + Story */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4 relative z-10">
           <FormField label="Sprint Phase">
             <input
               value={sprintPhase}
@@ -300,7 +376,7 @@ export default function CreateTicket() {
         </div>
 
         {/* Tags + Hours */}
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-2 gap-4 relative z-10">
           <FormField label="Tags">
             <input
               value={tags}
@@ -338,8 +414,7 @@ export default function CreateTicket() {
             {loading ? <Spinner size="sm" /> : 'Create Ticket'}
           </button>
         </div>
-        </motion.form>
-      </Parallax3DCard>
+      </motion.form>
     </div>
   )
 }

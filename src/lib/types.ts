@@ -88,7 +88,7 @@ export interface Ticket {
   id: number
   title: string
   description: string
-  status: number
+  status: string | number
   priority: number
   category: number
   createdByUserId: number
@@ -135,14 +135,13 @@ export interface UpdateTicketPayload {
   title?: string
   description?: string
   dueDate?: string
-  assignedToUserId?: number | null
   status?: string
   priority?: string
   category?: string
   userStoryId?: string
   sprintPhase?: string
   tags?: string
-  actualHours?: number
+  estimatedHours?: number
 }
 
 export interface TicketFilters {

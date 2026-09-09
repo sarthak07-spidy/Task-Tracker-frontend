@@ -27,7 +27,7 @@ interface SearchableSelectProps {
 }
 
 export default function SearchableSelect({
-  options,
+  options = [],
   value,
   onChange,
   placeholder = 'Select an option...',
@@ -37,23 +37,70 @@ export default function SearchableSelect({
   allowClear = true,
   maxDisplayCount,
   seeMorePath,
-  seeMoreLabel = 'See all projects',
+  seeMoreLabel = 'See all',
   onSeeMore,
 }: SearchableSelectProps) {
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
+  const [dropUp, setDropUp] = useState(false)
+
   const containerRef = useRef<HTMLDivElement>(null)
+  const triggerRef = useRef<HTMLButtonElement>(null)
   const inputRef = useRef<HTMLInputElement>(null)
 
-  // Find selected option
-  const selectedOption = useMemo(
-    () => options.find((opt) => String(opt.id) === String(value)),
-    [options, value],
-  )
+  // Check whether to open above or below based on viewport space
+  useEffect(() => {
+    if (open && triggerRef.current) {
+      const rect = triggerRef.current.getBoundingClientRect()
+      const spaceBelow = window.innerHeight - rect.bottom
+      const spaceAbove = rect.top
+      setDropUp(spaceBelow < 280 && spaceAbove > 280)
+    }
+  }, [open])
 
-  // Filtered options
+  // Focus search input on open
+  useEffect(() => {
+    if (open) {
+      setSearchTerm('')
+      const timer = setTimeout(() => {
+        inputRef.current?.focus()
+      }, 50)
+      return () => clearTimeout(timer)
+    }
+  }, [open])
+
+  // Click outside listener
+  useEffect(() => {
+    if (!open) return
+    function handleClickOutside(e: MouseEvent) {
+      if (containerRef.current && !containerRef.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClickOutside)
+    return () => document.removeEventListener('mousedown', handleClickOutside)
+  }, [open])
+
+  // Close on Escape key
+  useEffect(() => {
+    if (!open) return
+    function handleKeyDown(e: KeyboardEvent) {
+      if (e.key === 'Escape') {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('keydown', handleKeyDown)
+    return () => document.removeEventListener('keydown', handleKeyDown)
+  }, [open])
+
+  function toggle() {
+    if (disabled) return
+    setOpen((prev) => !prev)
+  }
+
   const filteredOptions = useMemo(() => {
+    if (!Array.isArray(options)) return []
     if (!searchTerm.trim()) return options
     const q = searchTerm.toLowerCase().trim()
     return options.filter(
@@ -74,38 +121,10 @@ export default function SearchableSelect({
   const hasMore = Boolean(maxDisplayCount && filteredOptions.length > maxDisplayCount)
   const remainingCount = maxDisplayCount ? Math.max(0, filteredOptions.length - maxDisplayCount) : 0
 
-  function handleSeeMoreClick(e: React.MouseEvent) {
-    e.stopPropagation()
-    setOpen(false)
-    if (onSeeMore) {
-      onSeeMore(searchTerm)
-    } else if (seeMorePath) {
-      const query = searchTerm.trim() ? `?search=${encodeURIComponent(searchTerm.trim())}` : ''
-      navigate(`${seeMorePath}${query}`)
-    }
-  }
-
-  // Close when clicked outside
-  useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
-      if (
-        containerRef.current &&
-        !containerRef.current.contains(event.target as Node)
-      ) {
-        setOpen(false)
-      }
-    }
-    document.addEventListener('mousedown', handleClickOutside)
-    return () => document.removeEventListener('mousedown', handleClickOutside)
-  }, [])
-
-  // Focus input when opened
-  useEffect(() => {
-    if (open) {
-      setSearchTerm('')
-      setTimeout(() => inputRef.current?.focus(), 50)
-    }
-  }, [open])
+  const selectedOption = useMemo(
+    () => (Array.isArray(options) ? options.find((opt) => String(opt.id) === String(value)) : undefined),
+    [options, value],
+  )
 
   function handleSelect(optId: number | string) {
     onChange(optId)
@@ -117,16 +136,31 @@ export default function SearchableSelect({
     onChange('')
   }
 
+  function handleSeeMoreClick(e: React.MouseEvent) {
+    e.stopPropagation()
+    setOpen(false)
+    if (onSeeMore) {
+      onSeeMore(searchTerm)
+    } else if (seeMorePath) {
+      const query = searchTerm.trim() ? `?search=${encodeURIComponent(searchTerm.trim())}` : ''
+      navigate(`${seeMorePath}${query}`)
+    }
+  }
+
   return (
-    <div ref={containerRef} className={`relative ${className}`}>
+    <div
+      ref={containerRef}
+      className={`relative w-full ${className} ${open ? 'z-50' : 'z-auto'}`}
+    >
       {/* Trigger Button */}
       <button
+        ref={triggerRef}
         type="button"
         disabled={disabled}
-        onClick={() => !disabled && setOpen((prev) => !prev)}
-        className={`flex w-full items-center justify-between rounded-xl border border-line bg-ink px-3.5 py-2.5 text-left text-sm transition-all focus:border-brand focus:outline-none ${
+        onClick={toggle}
+        className={`flex w-full items-center justify-between rounded-xl border border-line bg-ink px-3.5 py-2.5 text-left text-sm transition-all focus:outline-none ${
           disabled
-            ? 'cursor-not-allowed opacity-50'
+            ? 'cursor-not-allowed opacity-50 bg-ink/40'
             : 'hover:border-paper/30 cursor-pointer'
         } ${open ? 'border-brand ring-1 ring-brand/30' : ''}`}
       >
@@ -176,19 +210,22 @@ export default function SearchableSelect({
         </div>
       </button>
 
-      {/* Dropdown Menu */}
+      {/* Dropdown Menu — Pure CSS absolute positioning, 100% reliable & never detached */}
       <AnimatePresence>
         {open && (
           <motion.div
-            initial={{ opacity: 0, y: -6, scale: 0.98 }}
+            initial={{ opacity: 0, y: dropUp ? 4 : -4, scale: 0.98 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: -6, scale: 0.98 }}
+            exit={{ opacity: 0, y: dropUp ? 4 : -4, scale: 0.98 }}
             transition={{ duration: 0.15, ease: [0.22, 1, 0.36, 1] }}
-            className="absolute left-0 right-0 z-50 mt-1.5 max-h-72 overflow-hidden rounded-xl border border-line bg-ink-soft shadow-2xl shadow-ink/80 flex flex-col"
+            className={`absolute left-0 right-0 ${
+              dropUp ? 'bottom-full mb-1.5' : 'top-full mt-1.5'
+            } z-50 overflow-hidden rounded-xl border border-line bg-ink-soft shadow-2xl shadow-black/90 flex flex-col backdrop-blur-2xl`}
+            style={{ minWidth: '100%' }}
           >
             {/* Search Input */}
-            <div className="border-b border-line p-2">
-              <div className="flex items-center gap-2 rounded-lg bg-ink px-2.5 py-1.5 text-sm text-paper">
+            <div className="border-b border-line p-2 shrink-0 bg-ink/60">
+              <div className="flex items-center gap-2 rounded-lg bg-ink px-2.5 py-1.5 text-sm text-paper border border-line/40 focus-within:border-brand/50">
                 <Search className="size-4 shrink-0 text-paper-muted" />
                 <input
                   ref={inputRef}
@@ -212,10 +249,10 @@ export default function SearchableSelect({
             </div>
 
             {/* Options List */}
-            <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 max-h-60">
+            <div className="overflow-y-auto p-1.5 space-y-0.5 max-h-60 divide-y divide-line/20">
               {filteredOptions.length === 0 ? (
                 <div className="py-6 text-center text-xs text-paper-muted">
-                  No matching results for "{searchTerm}"
+                  {searchTerm ? `No results for "${searchTerm}"` : 'No options available'}
                 </div>
               ) : (
                 displayedOptions.map((opt) => {
@@ -227,7 +264,7 @@ export default function SearchableSelect({
                       onClick={() => handleSelect(opt.id)}
                       className={`flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm transition-colors ${
                         isSelected
-                          ? 'bg-brand/15 text-brand'
+                          ? 'bg-brand/15 text-brand font-medium'
                           : 'text-paper hover:bg-line/60'
                       }`}
                     >
@@ -267,9 +304,9 @@ export default function SearchableSelect({
               )}
             </div>
 
-            {/* See More Option Footer */}
+            {/* See More Footer */}
             {(seeMorePath || onSeeMore) && (hasMore || searchTerm.trim()) && (
-              <div className="border-t border-line bg-ink/60 p-1.5">
+              <div className="border-t border-line bg-ink/60 p-1.5 shrink-0">
                 <button
                   type="button"
                   onClick={handleSeeMoreClick}

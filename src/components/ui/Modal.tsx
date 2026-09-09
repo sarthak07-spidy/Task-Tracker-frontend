@@ -8,6 +8,7 @@ interface ModalProps {
   title?: string
   children: ReactNode
   maxWidth?: string
+  hideScrollbar?: boolean
 }
 
 export default function Modal({
@@ -16,6 +17,7 @@ export default function Modal({
   title,
   children,
   maxWidth = 'max-w-lg',
+  hideScrollbar = false,
 }: ModalProps) {
   useEffect(() => {
     if (open) {
@@ -57,10 +59,11 @@ export default function Modal({
             exit={{ opacity: 0, scale: 0.95, y: 20 }}
             transition={{ duration: 0.25, ease: [0.22, 1, 0.36, 1] }}
             onClick={(e) => e.stopPropagation()}
-            className={`relative w-full ${maxWidth} rounded-2xl border border-line bg-ink-soft p-6 shadow-2xl shadow-ink/60`}
+            className={`relative flex max-h-[90vh] w-full flex-col ${maxWidth} rounded-2xl border border-line bg-ink-soft shadow-2xl shadow-ink/60`}
           >
+            {/* Header — always visible */}
             {title && (
-              <div className="mb-5 flex items-center justify-between">
+              <div className="flex shrink-0 items-center justify-between border-b border-line px-6 py-5">
                 <h2 className="font-display text-lg font-bold text-paper">
                   {title}
                 </h2>
@@ -82,7 +85,11 @@ export default function Modal({
                 <X className="size-4" />
               </button>
             )}
-            {children}
+
+            {/* Scrollable body */}
+            <div className={`overflow-y-auto px-6 py-5 ${hideScrollbar ? 'no-scrollbar' : ''}`}>
+              {children}
+            </div>
           </motion.div>
         </motion.div>
       )}

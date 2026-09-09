@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useState, useMemo } from 'react'
 import { motion } from 'framer-motion'
 import { Link } from 'react-router-dom'
 import {
@@ -21,7 +21,7 @@ import {
   PriorityLabel,
   PriorityColor,
 } from '../lib/constants'
-import type { UserDashboard, Ticket as TicketType } from '../lib/types'
+import type { UserDashboard, Ticket as TicketType, Project } from '../lib/types'
 import Badge from '../components/ui/Badge'
 import { PageLoader } from '../components/ui/Spinner'
 import Parallax3DCard from '../components/ui/Parallax3DCard'
@@ -56,6 +56,7 @@ interface StatCard {
 export default function Dashboard() {
   const { user } = useAuth()
   const [dashData, setDashData] = useState<UserDashboard | null>(null)
+  const [projectsList, setProjectsList] = useState<Project[]>([])
   const [recentTickets, setRecentTickets] = useState<TicketType[]>([])
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
@@ -92,8 +93,10 @@ export default function Dashboard() {
         let activeCount = 0
         if (projectsRes.status === 'fulfilled') {
           const rawP = projectsRes.value.data
-          const pList = Array.isArray(rawP) ? rawP : rawP?.data || []
+          const d = (rawP?.success && rawP?.data) ? rawP.data : rawP
+          const pList = Array.isArray(d) ? d : d?.projects || []
           if (Array.isArray(pList)) {
+            setProjectsList(pList)
             projectsCount = pList.length
             activeCount = pList.filter(
               (p: { status?: string }) =>
@@ -139,6 +142,13 @@ export default function Dashboard() {
       isMounted = false
     }
   }, [])
+
+  const displayedActiveProjects = useMemo(() => {
+    if (dashData?.recentProjects && dashData.recentProjects.length > 0) {
+      return dashData.recentProjects
+    }
+    return projectsList
+  }, [dashData?.recentProjects, projectsList])
 
   if (loading) return <PageLoader />
 
@@ -218,15 +228,17 @@ export default function Dashboard() {
                   />
                   <div className="relative">
                     <div
-                      className="mb-3 inline-flex rounded-xl p-2.5 crazy-stat-icon"
+                      className="flex size-11 items-center justify-center rounded-xl"
                       style={{ backgroundColor: stat.bg }}
                     >
                       <Icon className="size-5" style={{ color: stat.color }} />
                     </div>
-                    <p className="text-3xl font-bold text-paper crazy-stat-num">
+                    <p className="mt-4 text-2xl font-bold text-paper">
                       <AnimatedCount value={stat.value} />
                     </p>
-                    <p className="mt-0.5 text-sm text-paper-muted">{stat.label}</p>
+                    <p className="text-xs font-medium text-paper-muted">
+                      {stat.label}
+                    </p>
                   </div>
                 </div>
               </Parallax3DCard>
@@ -235,8 +247,8 @@ export default function Dashboard() {
         })}
       </div>
 
-      {/* Quick Actions + Projects + Recent Tickets */}
-      <div className="grid gap-6 lg:grid-cols-[1fr_1.5fr]">
+      {/* Main Grid */}
+      <div className="grid gap-6 lg:grid-cols-2">
         {/* Left column: Quick Actions + Recent Projects */}
         <div className="flex flex-col gap-6">
           <motion.div
@@ -283,8 +295,8 @@ export default function Dashboard() {
             </div>
           </motion.div>
 
-          {/* Recent Projects */}
-          {dashData?.recentProjects && dashData.recentProjects.length > 0 && (
+          {/* Active Projects: Show strictly 2 and view more / direct tickets link */}
+          {displayedActiveProjects.length > 0 && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -304,10 +316,13 @@ export default function Dashboard() {
                 </Link>
               </div>
               <div className="mt-4 flex flex-col gap-3">
-                {dashData.recentProjects.map((proj) => (
+                {displayedActiveProjects.slice(0, 2).map((proj) => (
                   <Link
                     key={proj.id}
-                    to="/app/projects"
+                    to={`/app/tickets?projectId=${proj.id}`}
+                    onClick={() => {
+                      localStorage.setItem('t_tracker_selected_project_id', String(proj.id))
+                    }}
                     className="group block rounded-xl border border-line/50 bg-ink/30 p-4 transition-all hover:border-cobalt/40 hover:bg-ink/60"
                   >
                     <div className="flex items-center justify-between gap-2">
@@ -332,6 +347,15 @@ export default function Dashboard() {
                     )}
                   </Link>
                 ))}
+                {displayedActiveProjects.length > 2 && (
+                  <Link
+                    to="/app/projects"
+                    className="flex items-center justify-center gap-1.5 rounded-xl border border-dashed border-line/60 py-2.5 text-xs font-medium text-paper-muted transition-all hover:border-brand/40 hover:text-brand"
+                  >
+                    <span>+{displayedActiveProjects.length - 2} more projects</span>
+                    <ArrowRight className="size-3.5" />
+                  </Link>
+                )}
               </div>
             </motion.div>
           )}

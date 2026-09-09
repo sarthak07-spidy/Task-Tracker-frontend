@@ -18,6 +18,7 @@ import {
   CheckCircle2,
   AlertCircle,
   ExternalLink,
+  Trash2,
 } from 'lucide-react'
 import api from '../lib/api'
 import { useAuth } from '../context/AuthContext'
@@ -331,6 +332,31 @@ export default function ProjectDetail() {
     }
   }
 
+  // ─── Delete Project ────────────────────────────────────────────────────────
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  async function handleDeleteProject() {
+    if (!project) return
+    setDeleteLoading(true)
+    try {
+      try {
+        await api.delete(`/Projects/${project.id}`)
+      } catch {
+        await api.delete(`/projects/${project.id}`)
+      }
+      toast('success', `Project "${project.name}" deleted successfully!`)
+      navigate('/app/projects')
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response
+          ?.data?.message ?? 'Failed to delete project'
+      toast('error', msg)
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
   // ─── Filtered Tickets ───────────────────────────────────────────────────────
   const filteredTickets = useMemo(() => {
     return tickets.filter((t) => {
@@ -425,14 +451,26 @@ export default function ProjectDetail() {
           )}
 
           {canManage && (
-            <button
-              type="button"
-              onClick={() => setEditModalOpen(true)}
-              className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-medium text-paper-muted transition-all hover:border-paper/30 hover:text-paper"
-            >
-              <Settings className="size-3.5" />
-              Settings
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setEditModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-line px-3 py-2 text-xs font-medium text-paper-muted transition-all hover:border-paper/30 hover:text-paper"
+              >
+                <Settings className="size-3.5" />
+                Settings
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setDeleteModalOpen(true)}
+                className="flex items-center gap-1.5 rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2 text-xs font-semibold text-red-400 transition-all hover:bg-red-500/20 active:scale-95"
+                title="Delete project"
+              >
+                <Trash2 className="size-3.5" />
+                Delete Project
+              </button>
+            </>
           )}
 
           <button
@@ -1005,6 +1043,60 @@ export default function ProjectDetail() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* ─── Delete Project Confirmation Modal ─────────────────────────────── */}
+      <Modal
+        open={deleteModalOpen}
+        onClose={() => {
+          if (!deleteLoading) setDeleteModalOpen(false)
+        }}
+        title="Delete Project"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-400">
+            <AlertCircle className="size-6 shrink-0 text-red-400" />
+            <div className="text-xs leading-relaxed text-red-300">
+              <span className="font-semibold block text-sm text-red-200">
+                Are you sure you want to delete this project?
+              </span>
+              This will permanently delete{' '}
+              <strong className="text-paper font-semibold">
+                {project?.name}
+              </strong>{' '}
+              and all of its associated tickets, assignments, and data. This action cannot be undone.
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              disabled={deleteLoading}
+              onClick={() => setDeleteModalOpen(false)}
+              className="rounded-xl border border-line px-4 py-2 text-sm font-medium text-paper-muted hover:bg-ink hover:text-paper cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deleteLoading}
+              onClick={handleDeleteProject}
+              className="flex items-center gap-2 rounded-xl bg-red-500 px-5 py-2 text-sm font-semibold text-white hover:bg-red-600 active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {deleteLoading ? (
+                <>
+                  <Spinner size="sm" />
+                  <span>Deleting...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="size-4" />
+                  <span>Delete Project</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   )

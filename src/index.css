@@ -79,6 +79,56 @@
     color: var(--color-paper);
   }
 
+  /* Global Modern Sleek Scrollbar — Eliminates ugly native OS scrollbars */
+  ::-webkit-scrollbar {
+    width: 5px;
+    height: 5px;
+  }
+  ::-webkit-scrollbar-track {
+    background: transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: rgba(246, 243, 238, 0.18);
+    border-radius: 9999px;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    background: rgba(246, 243, 238, 0.38);
+  }
+
+  :root[data-theme='crazy'] ::-webkit-scrollbar-thumb {
+    background: rgba(245, 158, 11, 0.32);
+  }
+  :root[data-theme='crazy'] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(245, 158, 11, 0.65);
+  }
+
+  :root[data-theme='light'] ::-webkit-scrollbar-thumb {
+    background: rgba(15, 23, 42, 0.18);
+  }
+  :root[data-theme='light'] ::-webkit-scrollbar-thumb:hover {
+    background: rgba(15, 23, 42, 0.4);
+  }
+
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(246, 243, 238, 0.18) transparent;
+  }
+  :root[data-theme='crazy'] * {
+    scrollbar-color: rgba(245, 158, 11, 0.32) transparent;
+  }
+  :root[data-theme='light'] * {
+    scrollbar-color: rgba(15, 23, 42, 0.18) transparent;
+  }
+
+  /* Utility to hide scrollbar completely while maintaining scroll capability */
+  .no-scrollbar::-webkit-scrollbar {
+    display: none !important;
+  }
+  .no-scrollbar {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+
   /* Crazy Yenner Soft Atmosphere: Warm Champagne Yellow & Soft Titanium Slate Grey */
   :root[data-theme='crazy'] body {
     background-color: #212429;

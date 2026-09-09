@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { Clock } from 'lucide-react'
 import Spinner from '../ui/Spinner'
 
@@ -10,6 +10,10 @@ interface TimeLoggerProps {
 export default function TimeLogger({ currentHours, onLog }: TimeLoggerProps) {
   const [hours, setHours] = useState(String(currentHours ?? ''))
   const [loading, setLoading] = useState(false)
+
+  useEffect(() => {
+    setHours(currentHours != null ? String(currentHours) : '')
+  }, [currentHours])
 
   async function submit() {
     const val = parseFloat(hours)
@@ -29,7 +33,7 @@ export default function TimeLogger({ currentHours, onLog }: TimeLoggerProps) {
         <input
           type="number"
           min="0"
-          step="0.5"
+          step="any"
           value={hours}
           onChange={(e) => setHours(e.target.value)}
           placeholder="Hours"

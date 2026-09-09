@@ -19,7 +19,11 @@ import Parallax3DCard from '../ui/Parallax3DCard'
 
 export default function TicketCard({ ticket }: { ticket: Ticket }) {
   const isOverdue =
-    new Date(ticket.dueDate) < new Date() && ticket.status < 4
+    new Date(ticket.dueDate) < new Date() &&
+    ticket.status !== 'Completed' &&
+    ticket.status !== 'Closed' &&
+    Number(ticket.status) !== 4 &&
+    Number(ticket.status) !== 5
 
   return (
     <Parallax3DCard intensity={12} glare={true} depthEffect={true}>

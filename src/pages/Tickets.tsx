@@ -11,8 +11,10 @@ import {
   ChevronRight,
   Info,
   CheckCircle2,
+  User,
 } from 'lucide-react'
 import api from '../lib/api'
+import { useAuth } from '../context/AuthContext'
 import type { ApiResponse, Ticket, TicketFilters as FiltersType, Project } from '../lib/types'
 import { DEFAULT_PAGE_SIZE, TicketStatusLabel, PriorityLabel, CategoryLabel } from '../lib/constants'
 import TicketCard from '../components/tickets/TicketCard'
@@ -27,14 +29,18 @@ const ease = [0.22, 1, 0.36, 1] as const
 
 export default function Tickets() {
   const [searchParams, setSearchParams] = useSearchParams()
+  const { user } = useAuth()
 
   const queryProjectId = searchParams.get('projectId')
-  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>(
-    queryProjectId ? Number(queryProjectId) : '',
-  )
+  const [selectedProjectId, setSelectedProjectId] = useState<number | ''>(() => {
+    if (queryProjectId) return Number(queryProjectId)
+    const saved = localStorage.getItem('t_tracker_selected_project_id')
+    return saved ? Number(saved) : ''
+  })
 
   const [projects, setProjects] = useState<Project[]>([])
   const [tickets, setTickets] = useState<Ticket[]>([])
+  const [ticketScope, setTicketScope] = useState<'all' | 'assigned_to_me' | 'raised_by_me'>('all')
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -45,28 +51,42 @@ export default function Tickets() {
     pageSize: 10,
   })
 
-  // Keep selectedProjectId in sync with searchParams
+  // Keep selectedProjectId in sync with searchParams and storage
   useEffect(() => {
     if (queryProjectId) {
-      setSelectedProjectId(Number(queryProjectId))
+      const num = Number(queryProjectId)
+      setSelectedProjectId(num)
+      localStorage.setItem('t_tracker_selected_project_id', String(num))
+    } else {
+      const saved = localStorage.getItem('t_tracker_selected_project_id')
+      if (saved) {
+        setSelectedProjectId(Number(saved))
+        setSearchParams({ projectId: saved }, { replace: true })
+      }
     }
-  }, [queryProjectId])
+  }, [queryProjectId, setSearchParams])
 
   // ─── Fetch All Projects for Dropdown ────────────────────────────────────────
   useEffect(() => {
-    api
-      .get<ApiResponse<{ projects?: Project[] } | Project[]>>('/projects/all', {
-        params: { pageSize: 100 },
-      })
-      .then(({ data }) => {
-        const d = (data?.success && data?.data) ? data.data : data
-        if (Array.isArray(d)) {
-          setProjects(d)
-        } else if (d && 'projects' in d && Array.isArray(d.projects)) {
-          setProjects(d.projects)
+    async function loadProjects() {
+      try {
+        let res
+        try {
+          res = await api.get('/Projects/all', { params: { pageSize: 100 } })
+        } catch {
+          res = await api.get('/projects/all', { params: { pageSize: 100 } })
         }
-      })
-      .catch(() => {})
+        const data = res?.data
+        const d = (data?.success && data?.data) ? data.data : data
+        const pList = Array.isArray(d) ? d : d?.projects || d?.data || []
+        if (Array.isArray(pList)) {
+          setProjects(pList)
+        }
+      } catch (err) {
+        console.error('Failed to load projects in Tickets', err)
+      }
+    }
+    loadProjects()
   }, [])
 
   // ─── Fetch Tickets for Selected Project ─────────────────────────────────────
@@ -96,16 +116,20 @@ export default function Tickets() {
       const { data } = await api.get('/tickets', { params })
       const result = (data?.success && data?.data) ? data.data : data
 
+      let rawList: Ticket[] = []
       if (Array.isArray(result)) {
-        setTickets(result)
-        setTotalCount(result.length)
+        rawList = result
       } else if (result?.tickets && Array.isArray(result.tickets)) {
-        setTickets(result.tickets)
-        setTotalCount(result.totalCount ?? result.tickets.length)
-      } else {
-        setTickets([])
-        setTotalCount(0)
+        rawList = result.tickets
       }
+
+      // Strictly ensure tickets belong to the selected project
+      const projectFiltered = selectedProjectId
+        ? rawList.filter((t) => !t.projectId || Number(t.projectId) === Number(selectedProjectId))
+        : rawList
+
+      setTickets(projectFiltered)
+      setTotalCount(projectFiltered.length)
     } catch (err: unknown) {
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response
@@ -134,8 +158,10 @@ export default function Tickets() {
     setSelectedProjectId(numericId)
     setFilters((f) => ({ ...f, pageNumber: 1 }))
     if (numericId) {
+      localStorage.setItem('t_tracker_selected_project_id', String(numericId))
       setSearchParams({ projectId: String(numericId) })
     } else {
+      localStorage.removeItem('t_tracker_selected_project_id')
       setSearchParams({})
     }
   }
@@ -145,10 +171,36 @@ export default function Tickets() {
     [projects, selectedProjectId],
   )
 
+  const assignedToMeCount = useMemo(() => {
+    if (!user) return 0
+    return tickets.filter((t) => t.assignedToUserId === user.userId).length
+  }, [tickets, user])
+
+  const raisedByMeCount = useMemo(() => {
+    if (!user) return 0
+    return tickets.filter((t) => t.createdByUserId === user.userId || t.assignedByUserId === user.userId).length
+  }, [tickets, user])
+
   // Local search & criteria filter
   const displayedTickets = useMemo(() => {
     return tickets.filter((t) => {
-      // 1. Local Search query
+      // 0. Project ID filter (Must belong to selectedProjectId)
+      if (selectedProjectId && t.projectId && Number(t.projectId) !== Number(selectedProjectId)) {
+        return false
+      }
+
+      // 1. Scope filter (All / Assigned to Me / Raised by Me)
+      if (ticketScope === 'assigned_to_me') {
+        if (!user || t.assignedToUserId !== user.userId) {
+          return false
+        }
+      } else if (ticketScope === 'raised_by_me') {
+        if (!user || (t.createdByUserId !== user.userId && t.assignedByUserId !== user.userId)) {
+          return false
+        }
+      }
+
+      // 2. Local Search query
       if (searchQuery.trim()) {
         const q = searchQuery.toLowerCase().trim()
         const matchesSearch =
@@ -162,7 +214,7 @@ export default function Tickets() {
         if (!matchesSearch) return false
       }
 
-      // 2. Status filter
+      // 3. Status filter
       if (filters.status) {
         const label = TicketStatusLabel[t.status] || String(t.status)
         if (label.toLowerCase() !== filters.status.toLowerCase()) {
@@ -170,7 +222,7 @@ export default function Tickets() {
         }
       }
 
-      // 3. Priority filter
+      // 4. Priority filter
       if (filters.priority) {
         const label = PriorityLabel[t.priority] || String(t.priority)
         if (label.toLowerCase() !== filters.priority.toLowerCase()) {
@@ -178,7 +230,7 @@ export default function Tickets() {
         }
       }
 
-      // 4. Category filter
+      // 5. Category filter
       if (filters.category) {
         const label = CategoryLabel[t.category] || String(t.category)
         if (label.toLowerCase() !== filters.category.toLowerCase()) {
@@ -186,7 +238,7 @@ export default function Tickets() {
         }
       }
 
-      // 5. Sprint filter
+      // 6. Sprint filter
       if (filters.sprintPhase && filters.sprintPhase.trim()) {
         const sprint = (t.sprintPhase || '').toLowerCase()
         if (!sprint.includes(filters.sprintPhase.toLowerCase().trim())) {
@@ -196,7 +248,7 @@ export default function Tickets() {
 
       return true
     })
-  }, [tickets, searchQuery, filters])
+  }, [tickets, searchQuery, filters, ticketScope, user, selectedProjectId])
 
   return (
     <div className="space-y-6">
@@ -218,7 +270,7 @@ export default function Tickets() {
           </p>
         </div>
 
-        {selectedProjectId && (
+        {selectedProjectId && ticketScope !== 'assigned_to_me' && (
           <Link
             to={`/app/tickets/new?projectId=${selectedProjectId}`}
             className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-brand/35 transition-all hover:scale-[1.02] active:scale-95"
@@ -230,7 +282,7 @@ export default function Tickets() {
       </motion.div>
 
       {/* ─── Project Selector Bar ────────────────────────────────────────────── */}
-      <div className="rounded-2xl border border-line bg-ink-soft p-4 sm:p-5">
+      <div className="relative z-30 rounded-2xl border border-line bg-ink-soft p-4 sm:p-5">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="flex size-10 shrink-0 items-center justify-center rounded-xl bg-cobalt/15 text-cobalt">
@@ -258,9 +310,6 @@ export default function Tickets() {
               onChange={handleSelectProject}
               placeholder="Search & Select Project..."
               searchPlaceholder="Type project name to search..."
-              maxDisplayCount={5}
-              seeMorePath="/app/projects"
-              seeMoreLabel="See all projects in Projects"
             />
           </div>
         </div>
@@ -315,6 +364,48 @@ export default function Tickets() {
 
           {/* Search & Filters */}
           <div className="flex flex-col gap-3 rounded-2xl border border-line bg-ink-soft p-4">
+            {/* 3-Way Scope Toggle: All / Assigned to Me / Raised by Me */}
+            <div className="flex flex-wrap items-center gap-2 border-b border-line pb-3">
+              <button
+                type="button"
+                onClick={() => setTicketScope('all')}
+                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all ${
+                  ticketScope === 'all'
+                    ? 'bg-brand text-paper shadow-md shadow-brand/20'
+                    : 'border border-line bg-ink text-paper-muted hover:text-paper hover:border-paper/20'
+                }`}
+              >
+                <TicketIcon className="size-3.5" />
+                All Tickets ({tickets.length})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTicketScope('assigned_to_me')}
+                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all ${
+                  ticketScope === 'assigned_to_me'
+                    ? 'bg-brand text-paper shadow-md shadow-brand/20'
+                    : 'border border-line bg-ink text-paper-muted hover:text-paper hover:border-paper/20'
+                }`}
+              >
+                <User className="size-3.5" />
+                Assigned to Me ({assignedToMeCount})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTicketScope('raised_by_me')}
+                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all ${
+                  ticketScope === 'raised_by_me'
+                    ? 'bg-brand text-paper shadow-md shadow-brand/20'
+                    : 'border border-line bg-ink text-paper-muted hover:text-paper hover:border-paper/20'
+                }`}
+              >
+                <Plus className="size-3.5" />
+                Raised by Me ({raisedByMeCount})
+              </button>
+            </div>
+
             <div className="flex flex-col sm:flex-row gap-3">
               <div className="relative flex-1">
                 <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-paper-muted" />
@@ -347,17 +438,35 @@ export default function Tickets() {
             <PageLoader />
           ) : displayedTickets.length === 0 ? (
             <EmptyState
-              icon={TicketIcon}
-              title="No tickets found for this project"
-              description="Try changing the filters, or create the first ticket for this project."
+              icon={ticketScope === 'assigned_to_me' ? User : TicketIcon}
+              title={
+                ticketScope === 'assigned_to_me'
+                  ? 'No tickets assigned to you'
+                  : ticketScope === 'raised_by_me'
+                  ? 'No tickets raised by you'
+                  : searchQuery || filters.status || filters.priority || filters.category || filters.sprintPhase
+                  ? 'No matching tickets found'
+                  : 'No tickets found for this project'
+              }
+              description={
+                ticketScope === 'assigned_to_me'
+                  ? 'You do not have any tickets assigned to you in this project.'
+                  : ticketScope === 'raised_by_me'
+                  ? 'You haven’t created any tickets in this project yet.'
+                  : searchQuery || filters.status || filters.priority || filters.category || filters.sprintPhase
+                  ? 'Try clearing or changing the filters to see more tickets.'
+                  : 'Create the first ticket for this project to get started.'
+              }
               action={
-                <Link
-                  to={`/app/tickets/new?projectId=${selectedProjectId}`}
-                  className="mt-2 flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-brand/35"
-                >
-                  <Plus className="size-4" />
-                  Create Ticket
-                </Link>
+                ticketScope === 'assigned_to_me' ? undefined : (
+                  <Link
+                    to={`/app/tickets/new?projectId=${selectedProjectId}`}
+                    className="mt-2 flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-brand/35"
+                  >
+                    <Plus className="size-4" />
+                    Create Ticket
+                  </Link>
+                )
               }
             />
           ) : (

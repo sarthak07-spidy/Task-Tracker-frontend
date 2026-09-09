@@ -1,10 +1,10 @@
 import { Filter, X } from 'lucide-react'
-import { TicketStatusLabel, PriorityLabel, CategoryLabel } from '../../lib/constants'
-import type { TicketFilters as Filters } from '../../lib/types'
+import { statusMapping, PriorityLabel, CategoryLabel } from '../../lib/constants'
+import type { TicketFilters as FiltersType } from '../../lib/types'
 
 interface TicketFiltersProps {
-  filters: Filters
-  onChange: (filters: Filters) => void
+  filters: FiltersType
+  onChange: (f: FiltersType) => void
 }
 
 function SelectField({
@@ -37,7 +37,7 @@ function SelectField({
 
 export default function TicketFilters({ filters, onChange }: TicketFiltersProps) {
   const statusOpts: Record<string, string> = {}
-  Object.values(TicketStatusLabel).forEach((v) => (statusOpts[v] = v))
+  Object.values(statusMapping).forEach((v) => (statusOpts[v] = v))
 
   const priorityOpts: Record<string, string> = {}
   Object.values(PriorityLabel).forEach((v) => (priorityOpts[v] = v))

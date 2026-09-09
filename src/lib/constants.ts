@@ -1,17 +1,34 @@
 // ─── Ticket Status ──────────────────────────────────────────────────────────
+export const statusMapping: Record<string, string> = {
+  Open: 'Open',
+  InProgress: 'In Progress',
+  InReview: 'In Review',
+  Completed: 'Completed',
+  Closed: 'Closed',
+  Rejected: 'Rejected',
+  OnHold: 'On Hold',
+}
+
 export const TicketStatus = {
-  Open: 1,
-  InProgress: 2,
-  InReview: 3,
-  Completed: 4,
-  Closed: 5,
-  Rejected: 6,
-  OnHold: 7,
+  Open: 'Open',
+  InProgress: 'InProgress',
+  InReview: 'InReview',
+  Completed: 'Completed',
+  Closed: 'Closed',
+  Rejected: 'Rejected',
+  OnHold: 'OnHold',
 } as const
 
 export type TicketStatusValue = (typeof TicketStatus)[keyof typeof TicketStatus]
 
-export const TicketStatusLabel: Record<number, string> = {
+export const TicketStatusLabel: Record<string | number, string> = {
+  Open: 'Open',
+  InProgress: 'In Progress',
+  InReview: 'In Review',
+  Completed: 'Completed',
+  Closed: 'Closed',
+  Rejected: 'Rejected',
+  OnHold: 'On Hold',
   1: 'Open',
   2: 'In Progress',
   3: 'In Review',
@@ -21,7 +38,14 @@ export const TicketStatusLabel: Record<number, string> = {
   7: 'On Hold',
 }
 
-export const TicketStatusKey: Record<number, string> = {
+export const TicketStatusKey: Record<string | number, string> = {
+  Open: 'Open',
+  InProgress: 'InProgress',
+  InReview: 'InReview',
+  Completed: 'Completed',
+  Closed: 'Closed',
+  Rejected: 'Rejected',
+  OnHold: 'OnHold',
   1: 'Open',
   2: 'InProgress',
   3: 'InReview',
@@ -31,17 +55,31 @@ export const TicketStatusKey: Record<number, string> = {
   7: 'OnHold',
 }
 
-export const TicketStatusColor: Record<number, string> = {
-  1: '#3b82f6',   // blue
-  2: '#f59e0b',   // amber
-  3: '#a855f7',   // purple
-  4: '#22c55e',   // green
-  5: '#6b7280',   // gray
-  6: '#ef4444',   // red
-  7: '#f97316',   // orange
+export const TicketStatusColor: Record<string | number, string> = {
+  Open: '#3b82f6',       // blue
+  InProgress: '#f59e0b', // amber
+  InReview: '#a855f7',   // purple
+  Completed: '#22c55e',  // green
+  Closed: '#6b7280',     // gray
+  Rejected: '#ef4444',   // red
+  OnHold: '#f97316',     // orange
+  1: '#3b82f6',
+  2: '#f59e0b',
+  3: '#a855f7',
+  4: '#22c55e',
+  5: '#6b7280',
+  6: '#ef4444',
+  7: '#f97316',
 }
 
-export const TicketStatusBg: Record<number, string> = {
+export const TicketStatusBg: Record<string | number, string> = {
+  Open: 'rgba(59,130,246,0.15)',
+  InProgress: 'rgba(245,158,11,0.15)',
+  InReview: 'rgba(168,85,247,0.15)',
+  Completed: 'rgba(34,197,94,0.15)',
+  Closed: 'rgba(107,114,128,0.15)',
+  Rejected: 'rgba(239,68,68,0.15)',
+  OnHold: 'rgba(249,115,22,0.15)',
   1: 'rgba(59,130,246,0.15)',
   2: 'rgba(245,158,11,0.15)',
   3: 'rgba(168,85,247,0.15)',

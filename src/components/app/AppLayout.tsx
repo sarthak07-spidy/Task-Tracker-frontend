@@ -3,11 +3,13 @@ import Sidebar from './Sidebar'
 import AppHeader from './AppHeader'
 import ErrorBoundary from '../ErrorBoundary'
 import CrazyBackground from '../CrazyBackground'
+import CrazyCursor from '../CrazyCursor'
 
 export default function AppLayout() {
   return (
     <div className="relative flex min-h-screen bg-ink">
       <CrazyBackground />
+      <CrazyCursor />
       <Sidebar />
       <div className="relative z-10 flex flex-1 flex-col overflow-hidden">
         <AppHeader />

@@ -13,6 +13,7 @@ import {
   Send,
   CheckCircle2,
   AlertCircle,
+  FolderKanban,
 } from 'lucide-react'
 import api from '../lib/api'
 import { useAuth } from '../context/AuthContext'
@@ -25,7 +26,9 @@ import type {
   UpdateTicketPayload,
 } from '../lib/types'
 import {
+  statusMapping,
   TicketStatusLabel,
+  TicketStatusKey,
   TicketStatusColor,
   TicketStatusBg,
   PriorityLabel,
@@ -50,18 +53,25 @@ export default function TicketDetail() {
   const { toast } = useToast()
 
   const [ticket, setTicket] = useState<Ticket | null>(null)
+  const [project, setProject] = useState<{ id: number; name: string } | null>(null)
   const [comments, setComments] = useState<CommentThreadType | null>(null)
   const [loading, setLoading] = useState(true)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleteLoading, setDeleteLoading] = useState(false)
   const [editOpen, setEditOpen] = useState(false)
+  const [statusLoading, setStatusLoading] = useState(false)
 
-  // Edit form state
+  // Edit form state — all API-supported fields
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
-  const [editTags, setEditTags] = useState('')
+  const [editStatus, setEditStatus] = useState<string>('Open')
+  const [editPriority, setEditPriority] = useState<number>(2)
+  const [editCategory, setEditCategory] = useState<number>(0)
+  const [editDueDate, setEditDueDate] = useState('')
+  const [editEstHours, setEditEstHours] = useState<string>('')
   const [editSprint, setEditSprint] = useState('')
   const [editStory, setEditStory] = useState('')
+  const [editTags, setEditTags] = useState('')
   const [editLoading, setEditLoading] = useState(false)
 
   const isCreator = ticket && user && ticket.createdByUserId === user.userId
@@ -103,6 +113,25 @@ export default function TicketDetail() {
 
     if (loadedTicket) {
       setTicket(loadedTicket)
+      if (loadedTicket.projectId) {
+        api
+          .get(`/Projects/${loadedTicket.projectId}`)
+          .then(({ data }) => {
+            const p = (data?.success && data?.data) ? data.data : data
+            if (p?.name) setProject({ id: loadedTicket!.projectId!, name: p.name })
+          })
+          .catch(() => {
+            api
+              .get('/projects/all', { params: { pageSize: 100 } })
+              .then(({ data }) => {
+                const d = (data?.success && data?.data) ? data.data : data
+                const arr = Array.isArray(d) ? d : (d?.projects ?? [])
+                const found = arr.find((pr: { id: number; name: string }) => pr.id === loadedTicket?.projectId)
+                if (found) setProject({ id: found.id, name: found.name })
+              })
+              .catch(() => {})
+          })
+      }
     } else {
       setTicket(null)
       toast('error', 'Failed to load ticket')
@@ -128,8 +157,18 @@ export default function TicketDetail() {
   }, [fetchTicket])
 
   async function handleStatusChange(status: string) {
+    setStatusLoading(true)
     try {
-      await api.put(`/tickets/${id}/status`, { status })
+      try {
+        await api.put(`/tickets/${id}/status`, { status })
+      } catch (e: unknown) {
+        const errObj = e as { response?: { status?: number } }
+        if (errObj.response?.status === 404 || errObj.response?.status === 405) {
+          await api.put(`/Tickets/${id}/status`, { status })
+        } else {
+          throw e
+        }
+      }
       toast('success', 'Status updated')
       fetchTicket()
     } catch (err: unknown) {
@@ -138,12 +177,23 @@ export default function TicketDetail() {
         (err as { response?: { data?: { message?: string } } })?.response?.data
           ?.message ?? 'Failed to update status',
       )
+    } finally {
+      setStatusLoading(false)
     }
   }
 
   async function handleTimeLog(hours: number) {
     try {
-      await api.put(`/tickets/${id}/log-time`, { actualHours: hours })
+      try {
+        await api.put(`/tickets/${id}/log-time`, { actualHours: hours })
+      } catch (e: unknown) {
+        const errObj = e as { response?: { status?: number } }
+        if (errObj.response?.status === 404 || errObj.response?.status === 405) {
+          await api.put(`/Tickets/${id}/log-time`, { actualHours: hours })
+        } else {
+          throw e
+        }
+      }
       toast('success', 'Time logged')
       fetchTicket()
     } catch (err: unknown) {
@@ -200,23 +250,32 @@ export default function TicketDetail() {
     if (!ticket) return
     setEditTitle(ticket.title)
     setEditDesc(ticket.description)
-    setEditTags(ticket.tags ?? '')
+    setEditStatus(ticket.status != null ? String(ticket.status) : 'Open')
+    setEditPriority(ticket.priority)
+    setEditCategory(ticket.category)
+    setEditDueDate(ticket.dueDate ? ticket.dueDate.slice(0, 10) : '')
+    setEditEstHours(ticket.estimatedHours != null ? String(ticket.estimatedHours) : '')
     setEditSprint(ticket.sprintPhase ?? '')
     setEditStory(ticket.userStoryId ?? '')
+    setEditTags(ticket.tags ?? '')
     setEditOpen(true)
   }
 
   async function submitEdit() {
     setEditLoading(true)
     try {
-      const payload: UpdateTicketPayload = {}
-      if (editTitle !== ticket?.title) payload.title = editTitle
-      if (editDesc !== ticket?.description) payload.description = editDesc
-      if (editTags !== (ticket?.tags ?? '')) payload.tags = editTags
-      if (editSprint !== (ticket?.sprintPhase ?? ''))
-        payload.sprintPhase = editSprint
-      if (editStory !== (ticket?.userStoryId ?? ''))
-        payload.userStoryId = editStory
+      const payload: UpdateTicketPayload = {
+        title: editTitle,
+        description: editDesc,
+        status: editStatus,
+        priority: String(editPriority),
+        category: String(editCategory),
+        dueDate: editDueDate ? new Date(editDueDate).toISOString() : ticket!.dueDate,
+        sprintPhase: editSprint || undefined,
+        userStoryId: editStory || undefined,
+        tags: editTags || undefined,
+        estimatedHours: editEstHours !== '' ? Number(editEstHours) : undefined,
+      }
 
       await api.put(`/tickets/${id}`, payload)
       toast('success', 'Ticket updated')
@@ -240,7 +299,7 @@ export default function TicketDetail() {
         <AlertCircle className="size-12 text-paper-muted" />
         <p className="text-lg font-semibold text-paper">Ticket not found</p>
         <Link
-          to="/app/tickets"
+          to={project?.id ? `/app/tickets?projectId=${project.id}` : '/app/tickets'}
           className="text-sm text-brand hover:underline"
         >
           ← Back to tickets
@@ -249,11 +308,17 @@ export default function TicketDetail() {
     )
   }
 
+  const backUrl = ticket.projectId
+    ? `/app/tickets?projectId=${ticket.projectId}`
+    : project?.id
+    ? `/app/tickets?projectId=${project.id}`
+    : '/app/tickets'
+
   return (
     <div className="space-y-6">
       {/* Back */}
       <Link
-        to="/app/tickets"
+        to={backUrl}
         className="inline-flex items-center gap-2 text-sm font-medium text-paper-muted transition-colors hover:text-paper"
       >
         <ArrowLeft className="size-4" />
@@ -322,6 +387,7 @@ export default function TicketDetail() {
                     <StatusDropdown
                       currentStatus={ticket.status}
                       onStatusChange={handleStatusChange}
+                      disabled={statusLoading}
                     />
                     <button
                       type="button"
@@ -404,6 +470,21 @@ export default function TicketDetail() {
               Details
             </h3>
             <div className="flex flex-col gap-4">
+              {(project || ticket.projectId) && (
+                <div className="flex items-center justify-between text-xs">
+                  <span className="flex items-center gap-2 text-paper-muted">
+                    <FolderKanban className="size-3 text-brand" />
+                    Project
+                  </span>
+                  <Link
+                    to={`/app/tickets?projectId=${ticket.projectId}`}
+                    className="font-semibold text-brand hover:underline flex items-center gap-1 max-w-[150px] truncate"
+                    title={project?.name || `Project #${ticket.projectId}`}
+                  >
+                    {project?.name || `Project #${ticket.projectId}`}
+                  </Link>
+                </div>
+              )}
               <DetailRow
                 icon={User}
                 label="Created by"
@@ -423,7 +504,11 @@ export default function TicketDetail() {
                   year: 'numeric',
                 })}
                 warn={
-                  new Date(ticket.dueDate) < new Date() && ticket.status < 4
+                  new Date(ticket.dueDate) < new Date() &&
+                  ticket.status !== 'Completed' &&
+                  ticket.status !== 'Closed' &&
+                  Number(ticket.status) !== 4 &&
+                  Number(ticket.status) !== 5
                 }
               />
               <DetailRow
@@ -566,72 +651,147 @@ export default function TicketDetail() {
         loading={deleteLoading}
       />
 
-      {/* Edit modal */}
+      {/* Edit modal — full field coverage */}
       <Modal
         open={editOpen}
         onClose={() => setEditOpen(false)}
         title="Edit Ticket"
-        maxWidth="max-w-lg"
+        maxWidth="max-w-2xl"
       >
         <div className="flex flex-col gap-4">
+
+          {/* Title */}
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wider text-paper-muted">
-              Title
-            </span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-paper-muted">Title</span>
             <input
               value={editTitle}
               onChange={(e) => setEditTitle(e.target.value)}
               className="rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none focus:border-brand"
             />
           </label>
+
+          {/* Description */}
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wider text-paper-muted">
-              Description
-            </span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-paper-muted">Description</span>
             <textarea
               value={editDesc}
               onChange={(e) => setEditDesc(e.target.value)}
-              rows={4}
-              className="resize-none rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none focus:border-brand"
+              rows={3}
+              style={{ overflow: 'hidden', resize: 'none' }}
+              className="rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none focus:border-brand"
+              onInput={(e) => {
+                const el = e.currentTarget
+                el.style.height = 'auto'
+                el.style.height = `${el.scrollHeight}px`
+              }}
             />
           </label>
+
+          {/* Status / Priority / Category */}
+          <div className="grid grid-cols-3 gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-muted">Status</span>
+              <select
+                value={editStatus}
+                onChange={(e) => setEditStatus(e.target.value)}
+                className="rounded-xl border border-line bg-ink/60 px-3 py-3 text-sm text-paper outline-none focus:border-brand"
+              >
+                {Object.entries(statusMapping).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-muted">Priority</span>
+              <select
+                value={editPriority}
+                onChange={(e) => setEditPriority(Number(e.target.value))}
+                className="rounded-xl border border-line bg-ink/60 px-3 py-3 text-sm text-paper outline-none focus:border-brand"
+              >
+                {Object.entries(PriorityLabel).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-muted">Category</span>
+              <select
+                value={editCategory}
+                onChange={(e) => setEditCategory(Number(e.target.value))}
+                className="rounded-xl border border-line bg-ink/60 px-3 py-3 text-sm text-paper outline-none focus:border-brand"
+              >
+                <option value={0}>— None —</option>
+                {Object.entries(CategoryLabel).map(([val, label]) => (
+                  <option key={val} value={val}>{label}</option>
+                ))}
+              </select>
+            </label>
+          </div>
+
+          {/* Due Date & Estimated Hours */}
           <div className="grid grid-cols-2 gap-3">
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium uppercase tracking-wider text-paper-muted">
-                Sprint
-              </span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-muted">Due Date</span>
               <input
-                value={editSprint}
-                onChange={(e) => setEditSprint(e.target.value)}
+                type="date"
+                value={editDueDate}
+                onChange={(e) => setEditDueDate(e.target.value)}
                 className="rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none focus:border-brand"
               />
             </label>
             <label className="flex flex-col gap-1.5">
-              <span className="text-xs font-medium uppercase tracking-wider text-paper-muted">
-                User Story
-              </span>
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-muted">Estimated Hours</span>
               <input
-                value={editStory}
-                onChange={(e) => setEditStory(e.target.value)}
+                type="number"
+                min="0"
+                step="0.5"
+                value={editEstHours}
+                onChange={(e) => setEditEstHours(e.target.value)}
+                placeholder="0"
                 className="rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none focus:border-brand"
               />
             </label>
           </div>
+
+          {/* Sprint / User Story */}
+          <div className="grid grid-cols-2 gap-3">
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-muted">Sprint</span>
+              <input
+                value={editSprint}
+                onChange={(e) => setEditSprint(e.target.value)}
+                placeholder="e.g. Phase-1"
+                className="rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none focus:border-brand"
+              />
+            </label>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-xs font-semibold uppercase tracking-wider text-paper-muted">User Story</span>
+              <input
+                value={editStory}
+                onChange={(e) => setEditStory(e.target.value)}
+                placeholder="e.g. US-001"
+                className="rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none focus:border-brand"
+              />
+            </label>
+          </div>
+
+          {/* Tags */}
           <label className="flex flex-col gap-1.5">
-            <span className="text-xs font-medium uppercase tracking-wider text-paper-muted">
-              Tags (comma-separated)
-            </span>
+            <span className="text-xs font-semibold uppercase tracking-wider text-paper-muted">Tags (comma-separated)</span>
             <input
               value={editTags}
               onChange={(e) => setEditTags(e.target.value)}
+              placeholder="e.g. bug, critical, frontend"
               className="rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none focus:border-brand"
             />
           </label>
-          <div className="flex justify-end gap-3 pt-2">
+
+          {/* Actions */}
+          <div className="flex justify-end gap-3 border-t border-line pt-4">
             <button
               type="button"
               onClick={() => setEditOpen(false)}
-              className="rounded-xl border border-line px-4 py-2 text-sm font-medium text-paper-muted hover:bg-line"
+              className="rounded-xl border border-line px-5 py-2.5 text-sm font-medium text-paper-muted hover:bg-line"
             >
               Cancel
             </button>
@@ -639,7 +799,7 @@ export default function TicketDetail() {
               type="button"
               onClick={submitEdit}
               disabled={editLoading}
-              className="rounded-xl bg-brand px-4 py-2 text-sm font-semibold text-paper disabled:opacity-50"
+              className="rounded-xl bg-brand px-5 py-2.5 text-sm font-semibold text-paper disabled:opacity-50"
             >
               {editLoading ? 'Saving…' : 'Save Changes'}
             </button>

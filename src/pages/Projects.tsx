@@ -190,6 +190,39 @@ export default function Projects() {
   const [editingProject, setEditingProject] = useState<Project | null>(null)
   const [editLoading, setEditLoading] = useState(false)
 
+  // Delete project modal state
+  const [deleteModalOpen, setDeleteModalOpen] = useState(false)
+  const [deletingProject, setDeletingProject] = useState<Project | null>(null)
+  const [deleteLoading, setDeleteLoading] = useState(false)
+
+  function openDeleteModal(project: Project) {
+    setDeletingProject(project)
+    setDeleteModalOpen(true)
+  }
+
+  async function handleDeleteProject() {
+    if (!deletingProject) return
+    setDeleteLoading(true)
+    try {
+      try {
+        await api.delete(`/Projects/${deletingProject.id}`)
+      } catch {
+        await api.delete(`/projects/${deletingProject.id}`)
+      }
+      toast('success', `Project "${deletingProject.name}" deleted successfully!`)
+      setProjects((prev) => prev.filter((p) => p.id !== deletingProject.id))
+      setDeleteModalOpen(false)
+      setDeletingProject(null)
+    } catch (err: unknown) {
+      const msg =
+        (err as { response?: { data?: { message?: string } } })?.response
+          ?.data?.message ?? 'Failed to delete project'
+      toast('error', msg)
+    } finally {
+      setDeleteLoading(false)
+    }
+  }
+
   // ─── Fetch Projects ────────────────────────────────────────────────────────
   const fetchProjects = useCallback(async () => {
     try {
@@ -625,7 +658,7 @@ export default function Projects() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 transition={{ duration: 0.3, delay: i * 0.05, ease }}
-                onClick={() => navigate(`/app/tickets?projectId=${project.id}`)}
+                onClick={() => navigate(`/app/projects/${project.id}`)}
                 className="group flex flex-col justify-between rounded-2xl border border-line bg-ink-soft p-5 transition-all duration-300 hover:border-cobalt/40 hover:shadow-lg hover:shadow-ink/40 cursor-pointer"
               >
                 <div>
@@ -692,6 +725,10 @@ export default function Projects() {
                   {/* Row 1: View Tickets */}
                   <Link
                     to={`/app/tickets?projectId=${project.id}`}
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      localStorage.setItem('t_tracker_selected_project_id', String(project.id))
+                    }}
                     className="flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline"
                   >
                     View Tickets <ArrowRight className="size-3.5" />
@@ -736,6 +773,16 @@ export default function Projects() {
                         >
                           <Settings className="size-3.5" />
                           Edit
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openDeleteModal(project)}
+                          className="flex items-center gap-1.5 rounded-lg border border-red-500/30 bg-red-500/10 px-2.5 py-1.5 text-xs font-semibold text-red-400 transition-all hover:bg-red-500/20 active:scale-95"
+                          title="Delete project"
+                        >
+                          <Trash2 className="size-3.5" />
+                          Delete
                         </button>
                       </>
                     )}
@@ -1043,6 +1090,66 @@ export default function Projects() {
             </div>
           </form>
         )}
+      </Modal>
+
+      {/* ─── MODAL 4: Delete Project Confirmation ─────────────────────────── */}
+      <Modal
+        open={deleteModalOpen}
+        onClose={() => {
+          if (!deleteLoading) {
+            setDeleteModalOpen(false)
+            setDeletingProject(null)
+          }
+        }}
+        title="Delete Project"
+      >
+        <div className="space-y-4">
+          <div className="flex items-center gap-3 rounded-xl border border-red-500/30 bg-red-500/10 p-4 text-red-400">
+            <AlertCircle className="size-6 shrink-0 text-red-400" />
+            <div className="text-xs leading-relaxed text-red-300">
+              <span className="font-semibold block text-sm text-red-200">
+                Are you sure you want to delete this project?
+              </span>
+              This will permanently delete{' '}
+              <strong className="text-paper font-semibold">
+                {deletingProject?.name}
+              </strong>{' '}
+              and all of its associated tickets, assignments, and data. This action cannot be undone.
+            </div>
+          </div>
+
+          <div className="flex justify-end gap-3 pt-2">
+            <button
+              type="button"
+              disabled={deleteLoading}
+              onClick={() => {
+                setDeleteModalOpen(false)
+                setDeletingProject(null)
+              }}
+              className="rounded-xl border border-line px-4 py-2 text-sm font-medium text-paper-muted hover:bg-ink hover:text-paper cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={deleteLoading}
+              onClick={handleDeleteProject}
+              className="flex items-center gap-2 rounded-xl bg-red-500 px-5 py-2 text-sm font-semibold text-white hover:bg-red-600 active:scale-95 disabled:opacity-50 cursor-pointer"
+            >
+              {deleteLoading ? (
+                <>
+                  <Spinner size="sm" />
+                  <span>Deleting...</span>
+                </>
+              ) : (
+                <>
+                  <Trash2 className="size-4" />
+                  <span>Delete Project</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
       </Modal>
     </div>
   )

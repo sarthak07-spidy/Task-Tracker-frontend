@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
 import { Send, Reply, UserCircle } from 'lucide-react'
 import type { Comment, AddCommentPayload } from '../../lib/types'
@@ -80,6 +80,14 @@ export default function CommentThread({
   const [content, setContent] = useState('')
   const [replyTo, setReplyTo] = useState<number | null>(null)
   const [loading, setLoading] = useState(false)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
+
+  const autoGrow = useCallback(() => {
+    const el = textareaRef.current
+    if (!el) return
+    el.style.height = 'auto'
+    el.style.height = `${el.scrollHeight}px`
+  }, [])
 
   async function submit() {
     if (!content.trim()) return
@@ -91,6 +99,10 @@ export default function CommentThread({
       })
       setContent('')
       setReplyTo(null)
+      // Reset textarea height after clearing
+      if (textareaRef.current) {
+        textareaRef.current.style.height = 'auto'
+      }
     } finally {
       setLoading(false)
     }
@@ -134,12 +146,17 @@ export default function CommentThread({
         )}
         <div className="flex items-end gap-2">
           <textarea
+            ref={textareaRef}
             id="comment-input"
             value={content}
-            onChange={(e) => setContent(e.target.value)}
+            onChange={(e) => {
+              setContent(e.target.value)
+              autoGrow()
+            }}
             placeholder="Write a comment…"
             rows={2}
-            className="flex-1 resize-none rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none placeholder:text-paper-muted/60 focus:border-brand focus:shadow-[0_0_0_4px_rgba(228,55,28,0.15)]"
+            style={{ overflow: 'hidden', resize: 'none' }}
+            className="flex-1 rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none placeholder:text-paper-muted/60 focus:border-brand focus:shadow-[0_0_0_4px_rgba(228,55,28,0.15)]"
             onKeyDown={(e) => {
               if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit()
             }}
