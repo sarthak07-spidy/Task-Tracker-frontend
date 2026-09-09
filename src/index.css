@@ -1,0 +1,495 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-ink: #0a0a0d;
+  --color-ink-soft: #141419;
+  --color-paper: #f6f3ee;
+  --color-paper-muted: rgba(246, 243, 238, 0.62);
+  --color-brand: #e4371c;
+  --color-amber: #f7b32b;
+  --color-cobalt: #2f5bff;
+  --color-line: rgba(246, 243, 238, 0.12);
+
+  --font-sans: 'Inter', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Sora', 'Inter', ui-sans-serif, system-ui, sans-serif;
+
+  --radius: 1.25rem;
+}
+
+@layer base {
+  :root {
+    --color-ink: #0a0a0d;
+    --color-ink-soft: #141419;
+    --color-paper: #f6f3ee;
+    --color-paper-muted: rgba(246, 243, 238, 0.62);
+    --color-brand: #0ea5e9;
+    --color-amber: #f7b32b;
+    --color-cobalt: #38bdf8;
+    --color-line: rgba(246, 243, 238, 0.12);
+    --sync-banner-bg: rgba(245, 158, 11, 0.12);
+    --sync-banner-border: rgba(245, 158, 11, 0.35);
+    --sync-banner-icon: #fbbf24;
+    --sync-banner-text: #fef08a;
+  }
+
+  :root[data-theme='light'] {
+    --color-ink: #f8fafc;
+    --color-ink-soft: #ffffff;
+    --color-paper: #0f172a;
+    --color-paper-muted: #64748b;
+    --color-brand: #0284c7;
+    --color-amber: #d97706;
+    --color-cobalt: #0ea5e9;
+    --color-line: rgba(15, 23, 42, 0.1);
+    --sync-banner-bg: #fffbeb;
+    --sync-banner-border: #fcd34d;
+    --sync-banner-icon: #b45309;
+    --sync-banner-text: #78350f;
+  }
+
+  /* Crazy Yenner Soft Titanium Stone Grey & Warm Champagne Yellow Palette (NO blue, NO purple, NO harsh black) */
+  :root[data-theme='crazy'] {
+    --color-ink: #21242a;
+    --color-ink-soft: #2c3038;
+    --color-paper: #fcfbf9;
+    --color-paper-muted: #c8cbd2;
+    --color-brand: #f59e0b;
+    --color-amber: #fbbf24;
+    --color-cobalt: #fef08a;
+    --color-line: rgba(245, 158, 11, 0.28);
+    --sync-banner-bg: rgba(245, 158, 11, 0.14);
+    --sync-banner-border: rgba(245, 158, 11, 0.4);
+    --sync-banner-icon: #f59e0b;
+    --sync-banner-text: #fef08a;
+  }
+
+  * {
+    border-color: var(--color-line);
+    transition: background-color 0.25s ease, border-color 0.25s ease;
+  }
+  html {
+    scroll-behavior: smooth;
+  }
+  body {
+    @apply bg-ink text-paper font-sans antialiased;
+    overflow-x: hidden;
+  }
+  ::selection {
+    background: var(--color-brand);
+    color: var(--color-paper);
+  }
+
+  /* Crazy Yenner Soft Atmosphere: Warm Champagne Yellow & Soft Titanium Slate Grey */
+  :root[data-theme='crazy'] body {
+    background-color: #212429;
+    background-image: 
+      radial-gradient(at 15% 15%, rgba(245, 158, 11, 0.14) 0px, transparent 48%),
+      radial-gradient(at 85% 18%, rgba(251, 191, 36, 0.12) 0px, transparent 48%),
+      radial-gradient(at 50% 82%, rgba(148, 153, 164, 0.14) 0px, transparent 55%),
+      radial-gradient(at 85% 85%, rgba(217, 119, 6, 0.10) 0px, transparent 48%),
+      linear-gradient(135deg, #202328 0%, #282b32 50%, #1f2227 100%);
+    background-attachment: fixed;
+  }
+
+  /* Soft Titanium Stone Grey & Warm Champagne Gold Sidebar (NO blue, NO purple) */
+  :root[data-theme='crazy'] aside {
+    background: linear-gradient(180deg, rgba(42, 45, 52, 0.96) 0%, rgba(48, 51, 60, 0.96) 50%, rgba(39, 42, 49, 0.96) 100%) !important;
+    backdrop-filter: blur(24px) !important;
+    border-right: 1px solid rgba(245, 158, 11, 0.28) !important;
+    box-shadow: 6px 0 32px rgba(0, 0, 0, 0.25) !important;
+  }
+
+  :root[data-theme='crazy'] aside nav a {
+    transition: all 0.22s cubic-bezier(0.2, 0.8, 0.2, 1) !important;
+    transform-style: preserve-3d;
+  }
+
+  :root[data-theme='crazy'] aside nav a:hover {
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.18) 0%, rgba(251, 191, 36, 0.12) 100%) !important;
+    border: 1px solid rgba(245, 158, 11, 0.35) !important;
+    color: #fef08a !important;
+    transform: perspective(600px) translateZ(8px) translateX(3px) !important;
+    box-shadow: 0 4px 14px -2px rgba(245, 158, 11, 0.25) !important;
+  }
+
+  :root[data-theme='crazy'] aside nav a:active {
+    transform: perspective(600px) translateZ(-3px) translateX(1px) !important;
+  }
+
+  :root[data-theme='crazy'] aside nav a.bg-brand\/15 {
+    background: linear-gradient(90deg, rgba(245, 158, 11, 0.24) 0%, rgba(251, 191, 36, 0.16) 100%) !important;
+    border: 1px solid rgba(245, 158, 11, 0.5) !important;
+    color: #fef08a !important;
+    box-shadow: 0 0 20px rgba(245, 158, 11, 0.22) !important;
+  }
+
+  :root[data-theme='crazy'] aside nav a div[layoutId="sidebar-active"],
+  :root[data-theme='crazy'] aside nav a div.bg-brand {
+    background: #f59e0b !important;
+    box-shadow: 0 0 12px #f59e0b !important;
+  }
+
+  :root[data-theme='crazy'] aside div.bg-gradient-to-br {
+    background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 100%) !important;
+    color: #1a1c22 !important;
+    box-shadow: 0 0 12px rgba(245, 158, 11, 0.35) !important;
+  }
+
+  :root[data-theme='crazy'] header {
+    background: linear-gradient(90deg, rgba(38, 41, 48, 0.94) 0%, rgba(46, 49, 57, 0.94) 100%) !important;
+    border-bottom: 1px solid rgba(245, 158, 11, 0.26) !important;
+    box-shadow: 0 4px 22px rgba(0, 0, 0, 0.2) !important;
+  }
+
+  /* Base soft styling for cards (Specialized distinct 3D physics per card) */
+  :root[data-theme='crazy'] .bg-ink-soft {
+    background: linear-gradient(145deg, rgba(46, 49, 58, 0.92) 0%, rgba(55, 59, 68, 0.92) 50%, rgba(43, 46, 54, 0.92) 100%) !important;
+    backdrop-filter: blur(24px) !important;
+    border-top: 1px solid rgba(254, 240, 138, 0.35) !important;
+    border-left: 1px solid rgba(245, 158, 11, 0.28) !important;
+    border-right: 1px solid rgba(245, 158, 11, 0.22) !important;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.4) !important;
+    box-shadow: 
+      0 10px 28px -5px rgba(0, 0, 0, 0.35),
+      0 0 0 1px rgba(245, 158, 11, 0.22),
+      inset 0 1px 0 rgba(254, 240, 138, 0.18) !important;
+    transform-style: preserve-3d;
+  }
+
+  /* 1. Form 3D Parallax & Depth Layers */
+  :root[data-theme='crazy'] .crazy-form-container {
+    transform-style: preserve-3d;
+  }
+  :root[data-theme='crazy'] .crazy-form-container label {
+    transform: translateZ(18px);
+    transition: transform 0.3s ease;
+  }
+  :root[data-theme='crazy'] .crazy-form-container input,
+  :root[data-theme='crazy'] .crazy-form-container textarea,
+  :root[data-theme='crazy'] .crazy-form-container select,
+  :root[data-theme='crazy'] .crazy-form-container button[type="button"] {
+    transform: translateZ(12px);
+    box-shadow: 0 6px 18px -4px rgba(0, 0, 0, 0.35), inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+    transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease !important;
+  }
+  :root[data-theme='crazy'] .crazy-form-container input:focus,
+  :root[data-theme='crazy'] .crazy-form-container textarea:focus,
+  :root[data-theme='crazy'] .crazy-form-container select:focus {
+    transform: translateZ(24px);
+    box-shadow: 0 12px 26px -4px rgba(245, 158, 11, 0.25), 0 0 0 3px rgba(245, 158, 11, 0.3) !important;
+  }
+  :root[data-theme='crazy'] .crazy-form-submit {
+    transform: translateZ(35px);
+    box-shadow: 0 12px 30px -4px rgba(245, 158, 11, 0.45) !important;
+    transition: transform 0.25s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.25s ease !important;
+  }
+  :root[data-theme='crazy'] .crazy-form-submit:hover {
+    transform: translateZ(48px) translateY(-3px);
+    box-shadow: 0 20px 40px -4px rgba(245, 158, 11, 0.65) !important;
+  }
+  :root[data-theme='crazy'] .crazy-form-submit:active {
+    transform: translateZ(15px);
+  }
+
+  /* 2. Ticket Card Holographic 3D Parallax & Reactive Sheen */
+  :root[data-theme='crazy'] .crazy-ticket-card {
+    transform-style: preserve-3d;
+    transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.3s ease, border-color 0.3s ease !important;
+  }
+  :root[data-theme='crazy'] .crazy-ticket-card:hover {
+    border-color: rgba(251, 191, 36, 0.6) !important;
+    box-shadow: 0 20px 45px -8px rgba(0, 0, 0, 0.45), 0 0 25px rgba(245, 158, 11, 0.25), inset 0 1px 2px rgba(254, 240, 138, 0.35) !important;
+  }
+  :root[data-theme='crazy'] .crazy-ticket-card .crazy-ticket-priority {
+    transform: translateZ(24px);
+    box-shadow: 0 0 10px currentColor;
+  }
+  :root[data-theme='crazy'] .crazy-ticket-card .crazy-ticket-title {
+    transform: translateZ(18px);
+  }
+  :root[data-theme='crazy'] .crazy-ticket-card .crazy-ticket-badge {
+    transform: translateZ(26px);
+    box-shadow: 0 4px 12px -2px rgba(0, 0, 0, 0.35);
+  }
+  :root[data-theme='crazy'] .crazy-ticket-card .crazy-ticket-footer {
+    transform: translateZ(14px);
+  }
+
+  /* 3. Four Distinct Dashboard Stat Card 3D Animations */
+  /* Card 0: 3D Floating Levitation with golden underglow pulse */
+  @keyframes crazy-levitate-0 {
+    0%, 100% {
+      transform: perspective(1000px) translateY(0px) rotateX(0deg) rotateY(0deg);
+      box-shadow: 0 10px 25px -4px rgba(0, 0, 0, 0.35), 0 0 15px rgba(245, 158, 11, 0.15), inset 0 1px 1px rgba(254, 240, 138, 0.25);
+    }
+    50% {
+      transform: perspective(1000px) translateY(-8px) rotateX(2deg) rotateY(-1.5deg);
+      box-shadow: 0 22px 40px -6px rgba(0, 0, 0, 0.45), 0 0 28px rgba(245, 158, 11, 0.35), inset 0 1px 2px rgba(254, 240, 138, 0.35);
+    }
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-0 {
+    animation: crazy-levitate-0 5s ease-in-out infinite;
+    transform-style: preserve-3d;
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-0:hover {
+    animation-play-state: paused;
+  }
+
+  /* Card 1: 3D Magnetic Gyro Swing with luminous amber refraction */
+  @keyframes crazy-gyro-1 {
+    0%, 100% {
+      transform: perspective(1000px) rotateX(1.5deg) rotateY(-2.5deg);
+    }
+    50% {
+      transform: perspective(1000px) rotateX(-2deg) rotateY(2.5deg) translateY(-5px);
+    }
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-1 {
+    animation: crazy-gyro-1 6s ease-in-out infinite;
+    transform-style: preserve-3d;
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-1:hover {
+    animation-play-state: paused;
+  }
+
+  /* Card 2: 3D Isometric Step Lift with titanium glow */
+  @keyframes crazy-isometric-2 {
+    0%, 100% {
+      transform: perspective(1000px) translate3d(0, 0, 0);
+    }
+    50% {
+      transform: perspective(1000px) translate3d(0, -6px, 14px) rotateX(1.8deg);
+    }
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-2 {
+    animation: crazy-isometric-2 5.5s ease-in-out infinite;
+    transform-style: preserve-3d;
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-2:hover {
+    animation-play-state: paused;
+  }
+
+  /* Card 3: 3D Breathing Pulse with warm honey amber glow */
+  @keyframes crazy-pulse-3 {
+    0%, 100% {
+      transform: perspective(1000px) translateY(0);
+      box-shadow: 0 10px 25px -4px rgba(0, 0, 0, 0.35), 0 0 14px rgba(245, 158, 11, 0.14);
+    }
+    50% {
+      transform: perspective(1000px) translateY(-6px) rotateY(-2deg);
+      box-shadow: 0 20px 38px -6px rgba(0, 0, 0, 0.42), 0 0 26px rgba(245, 158, 11, 0.32);
+    }
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-3 {
+    animation: crazy-pulse-3 6.5s ease-in-out infinite;
+    transform-style: preserve-3d;
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-3:hover {
+    animation-play-state: paused;
+  }
+
+  /* 3D Stat Card Elements Pop */
+  :root[data-theme='crazy'] .crazy-stat-card-0 .crazy-stat-num,
+  :root[data-theme='crazy'] .crazy-stat-card-1 .crazy-stat-num,
+  :root[data-theme='crazy'] .crazy-stat-card-2 .crazy-stat-num,
+  :root[data-theme='crazy'] .crazy-stat-card-3 .crazy-stat-num {
+    transform: translateZ(32px);
+    text-shadow: 0 4px 14px rgba(0, 0, 0, 0.5);
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-0 .crazy-stat-icon,
+  :root[data-theme='crazy'] .crazy-stat-card-1 .crazy-stat-icon,
+  :root[data-theme='crazy'] .crazy-stat-card-2 .crazy-stat-icon,
+  :root[data-theme='crazy'] .crazy-stat-card-3 .crazy-stat-icon {
+    transform: translateZ(24px);
+    transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1);
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-0:hover .crazy-stat-icon,
+  :root[data-theme='crazy'] .crazy-stat-card-1:hover .crazy-stat-icon,
+  :root[data-theme='crazy'] .crazy-stat-card-2:hover .crazy-stat-icon,
+  :root[data-theme='crazy'] .crazy-stat-card-3:hover .crazy-stat-icon {
+    transform: translateZ(36px) rotateZ(8deg);
+  }
+
+  /* 4. Quick Action 3D Press Buttons on Dashboard */
+  :root[data-theme='crazy'] .crazy-action-btn {
+    transform-style: preserve-3d;
+    transition: transform 0.2s cubic-bezier(0.2, 0.8, 0.2, 1), box-shadow 0.2s ease, border-color 0.2s ease !important;
+  }
+  :root[data-theme='crazy'] .crazy-action-btn:hover {
+    transform: perspective(800px) translateZ(8px) translateY(-2px) !important;
+    border-color: rgba(245, 158, 11, 0.45) !important;
+    box-shadow: 0 10px 24px -4px rgba(245, 158, 11, 0.2), inset 0 1px 1px rgba(254, 240, 138, 0.2) !important;
+  }
+  :root[data-theme='crazy'] .crazy-action-btn:active {
+    transform: perspective(800px) translateZ(-4px) translateY(1px) !important;
+    box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.4) !important;
+  }
+
+  /* Soft Graphite Stone Inputs with Soft Golden Glow on Focus */
+  :root[data-theme='crazy'] input,
+  :root[data-theme='crazy'] textarea,
+  :root[data-theme='crazy'] select {
+    background: rgba(33, 36, 43, 0.92) !important;
+    border: 1px solid rgba(245, 158, 11, 0.26) !important;
+    color: #f8fafc !important;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
+    transition: all 0.25s ease !important;
+  }
+
+  :root[data-theme='crazy'] input:focus,
+  :root[data-theme='crazy'] textarea:focus,
+  :root[data-theme='crazy'] select:focus {
+    border-color: #f59e0b !important;
+    box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25), inset 0 2px 4px rgba(0, 0, 0, 0.2) !important;
+    transform: translateY(-1px);
+  }
+
+  :root[data-theme='crazy'] button.bg-ink {
+    background: rgba(33, 36, 43, 0.92) !important;
+    border: 1px solid rgba(245, 158, 11, 0.26) !important;
+  }
+
+  /* Soft Warm Champagne & Titanium Stat Cards */
+  :root[data-theme='crazy'] .crazy-stat-card-0 {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(48, 52, 61, 0.95) 100%) !important;
+    border: 1px solid rgba(245, 158, 11, 0.38) !important;
+    box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.35), 0 0 18px rgba(245, 158, 11, 0.16), inset 0 1px 1px rgba(254, 240, 138, 0.25) !important;
+    animation-delay: 0s;
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-1 {
+    background: linear-gradient(135deg, rgba(234, 179, 8, 0.22) 0%, rgba(52, 56, 65, 0.95) 100%) !important;
+    border: 1px solid rgba(251, 191, 36, 0.4) !important;
+    box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.35), 0 0 18px rgba(234, 179, 8, 0.18), inset 0 1px 1px rgba(254, 240, 138, 0.25) !important;
+    animation-delay: 1.5s;
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-2 {
+    background: linear-gradient(135deg, rgba(214, 211, 209, 0.2) 0%, rgba(46, 50, 58, 0.95) 100%) !important;
+    border: 1px solid rgba(203, 213, 225, 0.35) !important;
+    box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.35), 0 0 18px rgba(203, 213, 225, 0.12), inset 0 1px 1px rgba(255, 255, 255, 0.2) !important;
+    animation-delay: 3s;
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-3 {
+    background: linear-gradient(135deg, rgba(245, 158, 11, 0.24) 0%, rgba(50, 54, 63, 0.95) 100%) !important;
+    border: 1px solid rgba(245, 158, 11, 0.38) !important;
+    box-shadow: 0 12px 28px -4px rgba(0, 0, 0, 0.35), 0 0 18px rgba(245, 158, 11, 0.16), inset 0 1px 1px rgba(254, 240, 138, 0.25) !important;
+    animation-delay: 4.5s;
+  }
+  /* Override Stat Card Icons & Badges in Crazy Yenner (Zero blue, zero purple) */
+  :root[data-theme='crazy'] .crazy-stat-card-0 svg {
+    color: #f59e0b !important;
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-0 div[style*="background-color"] {
+    background-color: rgba(245, 158, 11, 0.16) !important;
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-2 svg {
+    color: #fef08a !important;
+  }
+  :root[data-theme='crazy'] .crazy-stat-card-2 div[style*="background-color"] {
+    background-color: rgba(254, 240, 138, 0.16) !important;
+  }
+
+  /* Inner cards and lists in Crazy mode */
+  :root[data-theme='crazy'] .bg-ink\/30,
+  :root[data-theme='crazy'] .bg-ink\/60 {
+    background-color: rgba(33, 36, 43, 0.8) !important;
+  }
+
+  /* Soft Radiant Amber / Champagne Gold Button (NO blue, NO purple, NO harsh red) */
+  :root[data-theme='crazy'] .bg-brand {
+    background: linear-gradient(135deg, #f59e0b 0%, #fbbf24 60%, #eab308 100%) !important;
+    box-shadow: 0 4px 20px -2px rgba(245, 158, 11, 0.45) !important;
+    color: #1b1d24 !important;
+    font-weight: 700 !important;
+  }
+
+  :root[data-theme='crazy'] .bg-brand:hover {
+    background: linear-gradient(135deg, #fbbf24 0%, #fef08a 60%, #f59e0b 100%) !important;
+    box-shadow: 0 8px 25px -2px rgba(245, 158, 11, 0.6) !important;
+    transform: translateY(-2px) scale(1.02);
+  }
+
+  :root[data-theme='crazy'] .hover\:border-cobalt\/40:hover {
+    border-color: #fbbf24 !important;
+    box-shadow: 0 0 24px -2px rgba(251, 191, 36, 0.4) !important;
+    transform: translateY(-4px) scale(1.01);
+  }
+}
+
+@utility preserve-3d {
+  transform-style: preserve-3d;
+}
+
+@utility backface-hidden {
+  backface-visibility: hidden;
+}
+
+@utility glass {
+  background: linear-gradient(
+    135deg,
+    rgba(246, 243, 238, 0.09),
+    rgba(246, 243, 238, 0.03)
+  );
+  border: 1px solid rgba(246, 243, 238, 0.14);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+}
+
+@utility grid-fade {
+  background-image:
+    linear-gradient(rgba(246, 243, 238, 0.05) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(246, 243, 238, 0.05) 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+  -webkit-mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+@utility text-gradient-brand {
+  background: linear-gradient(
+    100deg,
+    var(--color-brand) 0%,
+    var(--color-amber) 55%,
+    var(--color-cobalt) 110%
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+@keyframes spin-slow {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translate3d(0, 0, 0);
+  }
+  50% {
+    transform: translate3d(0, -14px, 0);
+  }
+}
+
+@keyframes pulse-ring {
+  0% {
+    transform: scale(0.9);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.8);
+    opacity: 0;
+  }
+}
+
+@utility animate-spin-slow {
+  animation: spin-slow 18s linear infinite;
+}
+
+@utility animate-float {
+  animation: float 6s ease-in-out infinite;
+}
+
+@utility animate-pulse-ring {
+  animation: pulse-ring 2s ease-out infinite;
+}
