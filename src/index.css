@@ -217,7 +217,7 @@
   :root[data-theme='crazy'] .crazy-form-container input,
   :root[data-theme='crazy'] .crazy-form-container textarea,
   :root[data-theme='crazy'] .crazy-form-container select,
-  :root[data-theme='crazy'] .crazy-form-container button[type="button"] {
+  :root[data-theme='crazy'] .crazy-form-container button[type="button"]:not(.searchable-select-btn) {
     transform: translateZ(12px);
     box-shadow: 0 6px 18px -4px rgba(0, 0, 0, 0.35), inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
     transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease !important;

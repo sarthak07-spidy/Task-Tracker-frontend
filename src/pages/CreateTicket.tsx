@@ -81,87 +81,69 @@ export default function CreateTicket() {
 
       setMembersLoading(true)
 
-      // 1. Try dedicated project members endpoint: GET /api/projects/{projectId}/members
-      try {
-        let res
-        try {
-          res = await api.get(`/projects/${projectId}/members`)
-        } catch {
-          res = await api.get(`/Projects/${projectId}/members`)
+      const mapMember = (m: Record<string, unknown>) => {
+        // Try all common field name conventions (.NET PascalCase + JS camelCase)
+        const rawId =
+          m.userId ?? m.UserId ?? m.id ?? m.Id ?? m.user_id
+        const email = (m.email as string) || (m.Email as string) || ''
+        const name = (
+          (m.userName as string) ||
+          (m.UserName as string) ||
+          (m.fullName as string) ||
+          (m.FullName as string) ||
+          `${(m.firstName as string) ?? (m.FirstName as string) ?? ''} ${(m.lastName as string) ?? (m.LastName as string) ?? ''}`.trim()
+        ).trim() || email || `Member #${rawId}`
+
+        // Use numeric ID if valid, else fall back to email as unique key
+        const numId = rawId !== undefined && rawId !== null ? Number(rawId) : NaN
+        const finalId: number | string = !isNaN(numId) ? numId : email
+
+        return {
+          userId: finalId as number,
+          firstName: name,
+          lastName: '',
+          email,
+          role: (m.role as string) || (m.Role as string) || (m.designation as string) || 'Member',
+          designation: (m.designation as string) || '',
+          department: (m.department as string) || '',
         }
-        const data = res?.data
-        const raw = (data?.success && data?.data) ? data.data : (Array.isArray(data) ? data : data?.members || data?.data || [])
-        if (Array.isArray(raw) && raw.length > 0) {
-          const mapped = raw.map((m: Record<string, unknown>) => {
-            const uId = (m.userId as number) ?? (m.id as number)
-            const name = ((m.userName as string) || `${(m.firstName as string) ?? ''} ${(m.lastName as string) ?? ''}`).trim() || (m.email as string) || `Member #${uId}`
-            return {
-              userId: Number(uId),
-              firstName: name,
-              lastName: '',
-              email: (m.email as string) || '',
-              role: (m.role as string) || (m.designation as string) || 'Member',
-              designation: (m.designation as string) || '',
-              department: (m.department as string) || '',
-            }
-          })
-          setMembers(mapped)
-          setMembersLoading(false)
-          return
-        }
-      } catch (err) {
-        console.warn('Direct project members failed, trying fallback', err)
       }
 
-      // 2. Try assignable members endpoint: GET /api/projects/{projectId}/members/assignable/members
+      // 1. PRIMARY: assignable/members — excludes the logged-in user automatically
       try {
-        let res
-        try {
-          res = await api.get(`/projects/${projectId}/members/assignable/members`)
-        } catch {
-          res = await api.get(`/Projects/${projectId}/members/assignable/members`)
-        }
+        const res = await api.get(`/projects/${projectId}/members/assignable/members`)
         const data = res?.data
         const list = (data?.success && data?.data) ? data.data : (Array.isArray(data) ? data : data?.members || data?.data || [])
         if (Array.isArray(list) && list.length > 0) {
-          const mapped = list.map((m: Record<string, unknown>) => {
-            const uId = (m.userId as number) ?? (m.id as number)
-            const name = ((m.userName as string) || `${(m.firstName as string) ?? ''} ${(m.lastName as string) ?? ''}`).trim() || (m.email as string) || `Member #${uId}`
-            return {
-              userId: Number(uId),
-              firstName: name,
-              lastName: '',
-              email: (m.email as string) || '',
-              role: (m.role as string) || (m.designation as string) || 'Member',
-              designation: (m.designation as string) || '',
-              department: (m.department as string) || '',
-            }
-          })
-          setMembers(mapped)
+          setMembers(list.map(mapMember))
           setMembersLoading(false)
           return
         }
       } catch (err) {
-        console.warn('Assignable members failed', err)
+        console.warn('Assignable members failed, trying fallback', err)
       }
 
-      // 3. Try localStorage cache for this project's members
+      // 2. FALLBACK: general /members endpoint (includes everyone)
+      try {
+        const res = await api.get(`/projects/${projectId}/members`)
+        const data = res?.data
+        const raw = (data?.success && data?.data) ? data.data : (Array.isArray(data) ? data : data?.members || data?.data || [])
+        if (Array.isArray(raw) && raw.length > 0) {
+          setMembers(raw.map(mapMember))
+          setMembersLoading(false)
+          return
+        }
+      } catch (err) {
+        console.warn('Direct project members also failed', err)
+      }
+
+      // 3. LAST RESORT: localStorage cache
       try {
         const cached = localStorage.getItem(`t_project_members_${projectId}`)
         if (cached) {
           const parsed = JSON.parse(cached)
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setMembers(
-              parsed.map((m: Record<string, unknown>) => ({
-                userId: (m.userId as number) || (m.id as number),
-                firstName: ((m.userName as string) || `${(m.firstName as string) ?? ''}`).trim() || `User #${m.userId || m.id}`,
-                lastName: '',
-                email: (m.email as string) || '',
-                role: (m.role as string) || 'Member',
-                designation: (m.designation as string) || '',
-                department: (m.department as string) || '',
-              }))
-            )
+            setMembers(parsed.map(mapMember))
             setMembersLoading(false)
             return
           }
@@ -170,7 +152,6 @@ export default function CreateTicket() {
         // ignore
       }
 
-      // Only project members allowed
       setMembers([])
       setMembersLoading(false)
     }
@@ -180,11 +161,39 @@ export default function CreateTicket() {
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
+
+    // ── Validation ────────────────────────────────────────────────────────────
+    if (!title.trim()) {
+      toast('error', 'Title is required')
+      return
+    }
+    if (!description.trim()) {
+      toast('error', 'Description is required')
+      return
+    }
+    if (!dueDate) {
+      toast('error', 'Due Date is required')
+      return
+    }
+    if (!projectId) {
+      toast('error', 'Please select a project')
+      return
+    }
+    if (!assignedToUserId) {
+      toast('error', 'Please assign this ticket to a team member')
+      return
+    }
+    if (!estimatedHours) {
+      toast('error', 'Estimated Hours is required')
+      return
+    }
+    // ─────────────────────────────────────────────────────────────────────────
+
     setLoading(true)
 
     const payload: CreateTicketPayload = {
-      title,
-      description,
+      title: title.trim(),
+      description: description.trim(),
       dueDate: new Date(dueDate).toISOString(),
     }
     if (projectId) payload.projectId = Number(projectId)
@@ -328,31 +337,32 @@ export default function CreateTicket() {
           </FormField>
         </div>
 
-        {/* Assignee — Relative z-20 */}
-        <div className="relative z-20">
-          <FormField label="Assign To (Project Members Only)">
-            <SearchableSelect
-              options={members.map((m) => ({
-                id: m.userId,
-                label: m.firstName || m.email,
-                sublabel: m.email,
-                badge: m.role || m.department,
-              }))}
-              value={assignedToUserId}
-              onChange={(val) => setAssignedToUserId(val ? Number(val) : '')}
-              placeholder={
-                !projectId
-                  ? 'Select a project first'
-                  : membersLoading
-                  ? 'Loading project members...'
-                  : members.length === 0
-                  ? 'No members in this project yet'
-                  : 'Search and select project member...'
-              }
-              searchPlaceholder="Type member name..."
-              disabled={!projectId || membersLoading}
-            />
-          </FormField>
+        {/* Assignee — z-50, uses div NOT FormField(label) to avoid double-click on button */}
+        <div className="relative z-50 flex flex-col gap-1.5">
+          <span className="text-xs font-medium uppercase tracking-[0.15em] text-paper-muted">
+            Assign To (Project Members Only)
+          </span>
+          <SearchableSelect
+            options={members.map((m) => ({
+              id: m.userId,
+              label: m.firstName || m.email,
+              sublabel: m.email,
+              badge: m.role || m.department,
+            }))}
+            value={assignedToUserId}
+            onChange={(val) => setAssignedToUserId(val === '' ? '' : Number(val))}
+            placeholder={
+              !projectId
+                ? 'Select a project first'
+                : membersLoading
+                ? 'Loading project members...'
+                : members.length === 0
+                ? 'No members in this project yet'
+                : 'Search and select project member...'
+            }
+            searchPlaceholder="Type member name..."
+            disabled={!projectId || membersLoading}
+          />
         </div>
 
         {/* Sprint + Story */}
@@ -427,11 +437,11 @@ function FormField({
   children: React.ReactNode
 }) {
   return (
-    <label className="flex flex-col gap-1.5">
+    <div className="flex flex-col gap-1.5">
       <span className="text-xs font-medium uppercase tracking-[0.15em] text-paper-muted">
         {label}
       </span>
       {children}
-    </label>
+    </div>
   )
 }

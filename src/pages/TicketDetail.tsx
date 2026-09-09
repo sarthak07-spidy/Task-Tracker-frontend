@@ -657,6 +657,7 @@ export default function TicketDetail() {
         onClose={() => setEditOpen(false)}
         title="Edit Ticket"
         maxWidth="max-w-2xl"
+        hideScrollbar={true}
       >
         <div className="flex flex-col gap-4">
 

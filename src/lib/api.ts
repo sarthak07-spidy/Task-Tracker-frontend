@@ -62,8 +62,29 @@ function isTokenExpired(token: string | null): boolean {
   }
 }
 
+function normalizeKeys(obj: unknown): unknown {
+  if (obj === null || typeof obj !== 'object') return obj
+  if (Array.isArray(obj)) return obj.map(normalizeKeys)
+  const record = obj as Record<string, unknown>
+  const result: Record<string, unknown> = {}
+  for (const [key, value] of Object.entries(record)) {
+    const val = normalizeKeys(value)
+    result[key] = val
+    const camel = key.length > 0 ? key[0].toLowerCase() + key.slice(1) : key
+    if (camel !== key && !(camel in result)) {
+      result[camel] = val
+    }
+  }
+  return result
+}
+
 api.interceptors.response.use(
-  (response) => response,
+  (response) => {
+    if (response.data && typeof response.data === 'object') {
+      response.data = normalizeKeys(response.data)
+    }
+    return response
+  },
   async (error) => {
     const originalRequest = error.config
     const url = (originalRequest?.url as string) || ''

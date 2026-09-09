@@ -71,10 +71,37 @@ export default function Dashboard() {
       try {
         const isSuperAdmin = user?.role === 'SuperAdmin'
 
+        const fetchDash = async () => {
+          if (isSuperAdmin) {
+            try {
+              return await api.get('/SuperAdmin/dashboard')
+            } catch {
+              return await api.get('/Users/dashboard')
+            }
+          }
+          return await api.get('/Users/dashboard')
+        }
+
+        const fetchProjects = async () => {
+          try {
+            return await api.get('/Projects/all')
+          } catch {
+            return await api.get('/projects/all')
+          }
+        }
+
+        const fetchTickets = async () => {
+          try {
+            return await api.get('/Tickets', { params: { pageNumber: 1, pageSize: 5 } })
+          } catch {
+            return await api.get('/tickets', { params: { pageNumber: 1, pageSize: 5 } })
+          }
+        }
+
         const [dashRes, projectsRes, ticketsRes] = await Promise.allSettled([
-          isSuperAdmin ? api.get('/Users/dashboard') : Promise.resolve(null),
-          api.get('/Projects/all'),
-          api.get('/tickets', { params: { pageNumber: 1, pageSize: 5 } }),
+          fetchDash(),
+          fetchProjects(),
+          fetchTickets(),
         ])
 
         if (!isMounted) return
@@ -83,7 +110,7 @@ export default function Dashboard() {
 
         if (dashRes.status === 'fulfilled' && dashRes.value) {
           const raw = dashRes.value.data
-          const d = raw?.success && raw?.data ? raw.data : raw
+          const d = raw?.success && raw?.data ? raw.data : (raw?.data ?? raw)
           if (d && typeof d === 'object') {
             dash = d as UserDashboard
           }
@@ -93,8 +120,8 @@ export default function Dashboard() {
         let activeCount = 0
         if (projectsRes.status === 'fulfilled') {
           const rawP = projectsRes.value.data
-          const d = (rawP?.success && rawP?.data) ? rawP.data : rawP
-          const pList = Array.isArray(d) ? d : d?.projects || []
+          const d = (rawP?.success && rawP?.data) ? rawP.data : (rawP?.data ?? rawP)
+          const pList = Array.isArray(d) ? d : (d?.projects ?? [])
           if (Array.isArray(pList)) {
             setProjectsList(pList)
             projectsCount = pList.length
@@ -119,15 +146,23 @@ export default function Dashboard() {
         } else {
           if (!dash.totalProjects && projectsCount) dash.totalProjects = projectsCount
           if (!dash.activeProjects && activeCount) dash.activeProjects = activeCount
+          if (!dash.completedProjects && projectsCount) {
+            dash.completedProjects = Math.max(0, projectsCount - activeCount)
+          }
         }
 
         setDashData(dash)
 
         if (ticketsRes.status === 'fulfilled') {
           const raw = ticketsRes.value.data
-          const d = raw?.success && raw?.data ? raw.data : raw
+          const d = raw?.success && raw?.data ? raw.data : (raw?.data ?? raw)
           const tickets = d?.tickets ?? (Array.isArray(d) ? d : [])
-          setRecentTickets(tickets)
+          if (Array.isArray(tickets)) {
+            setRecentTickets(tickets)
+            if (dash && !dash.totalTickets && tickets.length > 0) {
+              dash.totalTickets = tickets.length
+            }
+          }
         }
       } catch {
         if (isMounted) setError('An unexpected error occurred.')
