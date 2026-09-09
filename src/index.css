@@ -326,7 +326,7 @@
   }
 
   /* Soft Graphite Stone Inputs with Soft Golden Glow on Focus */
-  :root[data-theme='crazy'] input,
+  :root[data-theme='crazy'] input:not([type="checkbox"]):not([type="radio"]):not(.bg-transparent),
   :root[data-theme='crazy'] textarea,
   :root[data-theme='crazy'] select {
     background: rgba(33, 36, 43, 0.92) !important;
@@ -336,12 +336,22 @@
     transition: all 0.25s ease !important;
   }
 
-  :root[data-theme='crazy'] input:focus,
+  :root[data-theme='crazy'] input:not([type="checkbox"]):not([type="radio"]):not(.bg-transparent):focus,
   :root[data-theme='crazy'] textarea:focus,
   :root[data-theme='crazy'] select:focus {
     border-color: #f59e0b !important;
     box-shadow: 0 0 0 3px rgba(245, 158, 11, 0.25), inset 0 2px 4px rgba(0, 0, 0, 0.2) !important;
     transform: translateY(-1px);
+  }
+
+  /* Keep inner / transparent inputs clean & seamless */
+  :root[data-theme='crazy'] input.bg-transparent,
+  :root[data-theme='crazy'] input.bg-transparent:focus {
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+    outline: none !important;
   }
 
   :root[data-theme='crazy'] button.bg-ink {

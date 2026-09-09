@@ -76,21 +76,48 @@ export default function TicketDetail() {
   const canApprove = isManager && ticket?.status === 3
 
   const fetchTicket = useCallback(async () => {
+    if (!id) return
+    setLoading(true)
+    let loadedTicket: Ticket | null = null
+
     try {
-      const [ticketRes, commentsRes] = await Promise.all([
-        api.get<ApiResponse<Ticket>>(`/tickets/${id}`),
-        api.get<ApiResponse<CommentThreadType>>(
-          `/tickets/${id}/comments-thread`,
-        ),
-      ])
-      if (ticketRes.data.success) {
-        setTicket(ticketRes.data.data)
-      }
-      if (commentsRes.data.success) {
-        setComments(commentsRes.data.data)
+      const { data } = await api.get(`/tickets/${id}`)
+      const resData = (data?.success && data?.data) ? data.data : data
+      if (resData && (resData.id !== undefined || resData.title)) {
+        loadedTicket = resData as Ticket
       }
     } catch {
+      // Resilient fallback: look up ticket by ID from /tickets list
+      try {
+        const { data } = await api.get('/tickets', { params: { pageSize: 100 } })
+        const list = (data?.success && data?.data) ? data.data : data
+        const arr: Ticket[] = Array.isArray(list) ? list : (list?.tickets ?? [])
+        const found = arr.find((t) => String(t.id) === String(id))
+        if (found) {
+          loadedTicket = found
+        }
+      } catch {
+        // ignore fallback error
+      }
+    }
+
+    if (loadedTicket) {
+      setTicket(loadedTicket)
+    } else {
+      setTicket(null)
       toast('error', 'Failed to load ticket')
+    }
+
+    // Fetch comments independently so missing comments never break the ticket view
+    try {
+      const { data } = await api.get(`/tickets/${id}/comments-thread`)
+      const cData = (data?.success && data?.data) ? data.data : data
+      if (cData) {
+        setComments(cData as CommentThreadType)
+      }
+    } catch {
+      // Comments may be empty or not created yet
+      setComments(null)
     } finally {
       setLoading(false)
     }

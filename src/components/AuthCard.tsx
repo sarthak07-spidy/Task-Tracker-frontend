@@ -56,7 +56,7 @@ function Field({
           autoComplete={autoComplete}
           value={value}
           onChange={(e) => onChange(e.target.value)}
-          className="w-full bg-transparent text-sm text-paper outline-none placeholder:text-paper-muted/60"
+          className="w-full bg-transparent border-0 ring-0 text-sm text-paper outline-none placeholder:text-paper-muted/60 focus:outline-none focus:ring-0 focus:border-0 shadow-none"
           placeholder={label}
         />
         {trailing}

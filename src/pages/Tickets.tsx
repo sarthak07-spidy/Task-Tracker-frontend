@@ -14,7 +14,7 @@ import {
 } from 'lucide-react'
 import api from '../lib/api'
 import type { ApiResponse, Ticket, TicketFilters as FiltersType, Project } from '../lib/types'
-import { DEFAULT_PAGE_SIZE } from '../lib/constants'
+import { DEFAULT_PAGE_SIZE, TicketStatusLabel, PriorityLabel, CategoryLabel } from '../lib/constants'
 import TicketCard from '../components/tickets/TicketCard'
 import TicketFilters from '../components/tickets/TicketFilters'
 import ApprovalPanel from '../components/tickets/ApprovalPanel'
@@ -145,18 +145,58 @@ export default function Tickets() {
     [projects, selectedProjectId],
   )
 
-  // Local search filter
+  // Local search & criteria filter
   const displayedTickets = useMemo(() => {
-    if (!searchQuery.trim()) return tickets
-    const q = searchQuery.toLowerCase().trim()
-    return tickets.filter(
-      (t) =>
-        t.title.toLowerCase().includes(q) ||
-        t.description?.toLowerCase().includes(q) ||
-        t.userStoryId?.toLowerCase().includes(q) ||
-        t.tags?.toLowerCase().includes(q),
-    )
-  }, [tickets, searchQuery])
+    return tickets.filter((t) => {
+      // 1. Local Search query
+      if (searchQuery.trim()) {
+        const q = searchQuery.toLowerCase().trim()
+        const matchesSearch =
+          t.title?.toLowerCase().includes(q) ||
+          t.description?.toLowerCase().includes(q) ||
+          t.userStoryId?.toLowerCase().includes(q) ||
+          t.tags?.toLowerCase().includes(q) ||
+          t.createdByName?.toLowerCase().includes(q) ||
+          t.assignedToName?.toLowerCase().includes(q) ||
+          String(t.id).includes(q)
+        if (!matchesSearch) return false
+      }
+
+      // 2. Status filter
+      if (filters.status) {
+        const label = TicketStatusLabel[t.status] || String(t.status)
+        if (label.toLowerCase() !== filters.status.toLowerCase()) {
+          return false
+        }
+      }
+
+      // 3. Priority filter
+      if (filters.priority) {
+        const label = PriorityLabel[t.priority] || String(t.priority)
+        if (label.toLowerCase() !== filters.priority.toLowerCase()) {
+          return false
+        }
+      }
+
+      // 4. Category filter
+      if (filters.category) {
+        const label = CategoryLabel[t.category] || String(t.category)
+        if (label.toLowerCase() !== filters.category.toLowerCase()) {
+          return false
+        }
+      }
+
+      // 5. Sprint filter
+      if (filters.sprintPhase && filters.sprintPhase.trim()) {
+        const sprint = (t.sprintPhase || '').toLowerCase()
+        if (!sprint.includes(filters.sprintPhase.toLowerCase().trim())) {
+          return false
+        }
+      }
+
+      return true
+    })
+  }, [tickets, searchQuery, filters])
 
   return (
     <div className="space-y-6">
@@ -216,8 +256,11 @@ export default function Tickets() {
               }))}
               value={selectedProjectId}
               onChange={handleSelectProject}
-              placeholder="Switch / Select Project..."
-              searchPlaceholder="Type project name..."
+              placeholder="Search & Select Project..."
+              searchPlaceholder="Type project name to search..."
+              maxDisplayCount={5}
+              seeMorePath="/app/projects"
+              seeMoreLabel="See all projects in Projects"
             />
           </div>
         </div>
@@ -229,42 +272,17 @@ export default function Tickets() {
           initial={{ opacity: 0, y: 20 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.4 }}
-          className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-line bg-ink-soft/60 px-6 py-16 text-center"
+          className="flex flex-col items-center justify-center rounded-3xl border border-dashed border-line bg-ink-soft/60 px-6 py-20 text-center"
         >
-          <div className="mb-4 rounded-2xl bg-brand/15 p-4 text-brand">
-            <FolderKanban className="size-10" />
+          <div className="mb-4 flex size-16 items-center justify-center rounded-2xl bg-brand/15 text-brand shadow-lg shadow-brand/10">
+            <FolderKanban className="size-8" />
           </div>
           <h2 className="font-display text-xl sm:text-2xl font-bold text-paper">
             Please Select a Project
           </h2>
           <p className="mt-2 max-w-md text-sm text-paper-muted leading-relaxed">
-            Tickets are grouped by project. Choose a project from below or the dropdown above to see its tickets, progress, and assignments.
+            Tickets are grouped by project. Search and select a project from the dropdown above to view its tickets, track progress, and manage tasks.
           </p>
-
-          {/* Quick Project Cards */}
-          <div className="mt-8 flex flex-wrap justify-center gap-3 max-w-xl">
-            {projects.map((proj) => (
-              <button
-                key={proj.id}
-                type="button"
-                onClick={() => handleSelectProject(proj.id)}
-                className="group flex items-center gap-3 rounded-xl border border-line bg-ink px-4 py-3 text-left transition-all hover:border-brand/50 hover:bg-ink-soft active:scale-95"
-              >
-                <div className="flex size-8 shrink-0 items-center justify-center rounded-lg bg-cobalt/15 text-xs font-bold text-cobalt">
-                  {proj.name[0]?.toUpperCase()}
-                </div>
-                <div>
-                  <p className="font-semibold text-sm text-paper group-hover:text-brand transition-colors">
-                    {proj.name}
-                  </p>
-                  {proj.companyName && (
-                    <p className="text-xs text-paper-muted">{proj.companyName}</p>
-                  )}
-                </div>
-                <ChevronRight className="size-4 text-paper-muted group-hover:translate-x-0.5 transition-transform" />
-              </button>
-            ))}
-          </div>
         </motion.div>
       )}
 

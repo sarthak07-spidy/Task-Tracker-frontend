@@ -1,6 +1,7 @@
 import { useState, useRef, useEffect, useMemo } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
-import { Search, ChevronDown, Check, X, User } from 'lucide-react'
+import { Search, ChevronDown, Check, X, User, ArrowRight } from 'lucide-react'
+import { useNavigate } from 'react-router-dom'
 
 export interface SearchableOption {
   id: number | string
@@ -19,6 +20,10 @@ interface SearchableSelectProps {
   disabled?: boolean
   className?: string
   allowClear?: boolean
+  maxDisplayCount?: number
+  seeMorePath?: string
+  seeMoreLabel?: string
+  onSeeMore?: (searchTerm: string) => void
 }
 
 export default function SearchableSelect({
@@ -30,7 +35,12 @@ export default function SearchableSelect({
   disabled = false,
   className = '',
   allowClear = true,
+  maxDisplayCount,
+  seeMorePath,
+  seeMoreLabel = 'See all projects',
+  onSeeMore,
 }: SearchableSelectProps) {
+  const navigate = useNavigate()
   const [open, setOpen] = useState(false)
   const [searchTerm, setSearchTerm] = useState('')
   const containerRef = useRef<HTMLDivElement>(null)
@@ -53,6 +63,27 @@ export default function SearchableSelect({
         (opt.badge && opt.badge.toLowerCase().includes(q)),
     )
   }, [options, searchTerm])
+
+  const displayedOptions = useMemo(() => {
+    if (maxDisplayCount && maxDisplayCount > 0) {
+      return filteredOptions.slice(0, maxDisplayCount)
+    }
+    return filteredOptions
+  }, [filteredOptions, maxDisplayCount])
+
+  const hasMore = Boolean(maxDisplayCount && filteredOptions.length > maxDisplayCount)
+  const remainingCount = maxDisplayCount ? Math.max(0, filteredOptions.length - maxDisplayCount) : 0
+
+  function handleSeeMoreClick(e: React.MouseEvent) {
+    e.stopPropagation()
+    setOpen(false)
+    if (onSeeMore) {
+      onSeeMore(searchTerm)
+    } else if (seeMorePath) {
+      const query = searchTerm.trim() ? `?search=${encodeURIComponent(searchTerm.trim())}` : ''
+      navigate(`${seeMorePath}${query}`)
+    }
+  }
 
   // Close when clicked outside
   useEffect(() => {
@@ -181,13 +212,13 @@ export default function SearchableSelect({
             </div>
 
             {/* Options List */}
-            <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5">
+            <div className="flex-1 overflow-y-auto p-1.5 space-y-0.5 max-h-60">
               {filteredOptions.length === 0 ? (
                 <div className="py-6 text-center text-xs text-paper-muted">
                   No matching results for "{searchTerm}"
                 </div>
               ) : (
-                filteredOptions.map((opt) => {
+                displayedOptions.map((opt) => {
                   const isSelected = String(opt.id) === String(value)
                   return (
                     <button
@@ -235,6 +266,27 @@ export default function SearchableSelect({
                 })
               )}
             </div>
+
+            {/* See More Option Footer */}
+            {(seeMorePath || onSeeMore) && (hasMore || searchTerm.trim()) && (
+              <div className="border-t border-line bg-ink/60 p-1.5">
+                <button
+                  type="button"
+                  onClick={handleSeeMoreClick}
+                  className="flex w-full items-center justify-between rounded-lg px-3 py-2 text-xs font-semibold text-brand hover:bg-brand/10 transition-colors"
+                >
+                  <span className="flex items-center gap-1.5">
+                    {seeMoreLabel}
+                    {hasMore && (
+                      <span className="rounded-md bg-brand/20 px-1.5 py-0.5 text-[10px] font-bold text-brand">
+                        +{remainingCount} more
+                      </span>
+                    )}
+                  </span>
+                  <ArrowRight className="size-3.5" />
+                </button>
+              </div>
+            )}
           </motion.div>
         )}
       </AnimatePresence>

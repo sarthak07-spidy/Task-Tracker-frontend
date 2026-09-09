@@ -1,5 +1,5 @@
 import { useEffect, useState, useCallback, useMemo } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { motion, AnimatePresence } from 'framer-motion'
 import {
   FolderKanban,
@@ -18,6 +18,7 @@ import {
   Check,
   CheckCircle2,
   ArrowRight,
+  Search,
 } from 'lucide-react'
 import api from '../lib/api'
 import { useAuth } from '../context/AuthContext'
@@ -27,6 +28,7 @@ import EmptyState from '../components/ui/EmptyState'
 import Spinner, { PageLoader } from '../components/ui/Spinner'
 import { useToast } from '../components/ui/Toast'
 import SearchableSelect from '../components/ui/SearchableSelect'
+import Pagination from '../components/ui/Pagination'
 
 const ease = [0.22, 1, 0.36, 1] as const
 
@@ -90,13 +92,26 @@ const roleOptions = [
 
 export default function Projects() {
   const navigate = useNavigate()
+  const [searchParams, setSearchParams] = useSearchParams()
   const { user } = useAuth()
   const { toast } = useToast()
 
   const [projects, setProjects] = useState<Project[]>([])
   const [statusTab, setStatusTab] = useState<'Active' | 'Completed'>('Active')
+  const [searchQuery, setSearchQuery] = useState(searchParams.get('search') || '')
+  const [currentPage, setCurrentPage] = useState(1)
+  const PAGE_SIZE = 6
   const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+
+  // Sync searchQuery when URL search param changes
+  useEffect(() => {
+    const urlQuery = searchParams.get('search') || ''
+    if (urlQuery !== searchQuery) {
+      setSearchQuery(urlQuery)
+      setCurrentPage(1)
+    }
+  }, [searchParams])
 
   const activeProjects = useMemo(
     () => projects.filter((p) => p.status !== 'Completed'),
@@ -106,8 +121,40 @@ export default function Projects() {
     () => projects.filter((p) => p.status === 'Completed'),
     [projects],
   )
-  const displayedProjects =
-    statusTab === 'Active' ? activeProjects : completedProjects
+
+  const filteredProjects = useMemo(() => {
+    let list = statusTab === 'Active' ? activeProjects : completedProjects
+    if (searchQuery.trim()) {
+      const q = searchQuery.toLowerCase().trim()
+      list = list.filter(
+        (p) =>
+          p.name?.toLowerCase().includes(q) ||
+          p.companyName?.toLowerCase().includes(q) ||
+          p.description?.toLowerCase().includes(q),
+      )
+    }
+    return list
+  }, [activeProjects, completedProjects, statusTab, searchQuery])
+
+  const paginatedProjects = useMemo(() => {
+    const start = (currentPage - 1) * PAGE_SIZE
+    return filteredProjects.slice(start, start + PAGE_SIZE)
+  }, [filteredProjects, currentPage])
+
+  function handleTabChange(tab: 'Active' | 'Completed') {
+    setStatusTab(tab)
+    setCurrentPage(1)
+  }
+
+  function handleSearchChange(query: string) {
+    setSearchQuery(query)
+    setCurrentPage(1)
+    if (query.trim()) {
+      setSearchParams({ search: query.trim() })
+    } else {
+      setSearchParams({})
+    }
+  }
 
   // Permissions
   const canManage =
@@ -462,33 +509,58 @@ export default function Projects() {
         )}
       </motion.div>
 
-      {/* Active vs Completed Tabs */}
-      <div className="flex items-center gap-2 border-b border-line pb-4">
-        <button
-          type="button"
-          onClick={() => setStatusTab('Active')}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
-            statusTab === 'Active'
-              ? 'bg-brand text-paper shadow-md shadow-brand/20'
-              : 'border border-line bg-ink-soft text-paper-muted hover:text-paper'
-          }`}
-        >
-          <FolderKanban className="size-4" />
-          Active Projects ({activeProjects.length})
-        </button>
+      {/* ─── Search & Tabs Controls Toolbar ──────────────────────────────────── */}
+      <div className="flex flex-col md:flex-row items-stretch md:items-center justify-between gap-4 border-b border-line pb-4">
+        {/* Active vs Completed Tabs */}
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={() => handleTabChange('Active')}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
+              statusTab === 'Active'
+                ? 'bg-brand text-paper shadow-md shadow-brand/20'
+                : 'border border-line bg-ink-soft text-paper-muted hover:text-paper'
+            }`}
+          >
+            <FolderKanban className="size-4" />
+            Active Projects ({activeProjects.length})
+          </button>
 
-        <button
-          type="button"
-          onClick={() => setStatusTab('Completed')}
-          className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
-            statusTab === 'Completed'
-              ? 'bg-brand text-paper shadow-md shadow-brand/20'
-              : 'border border-line bg-ink-soft text-paper-muted hover:text-paper'
-          }`}
-        >
-          <CheckCircle2 className="size-4" />
-          Completed ({completedProjects.length})
-        </button>
+          <button
+            type="button"
+            onClick={() => handleTabChange('Completed')}
+            className={`flex items-center gap-2 rounded-xl px-4 py-2 text-sm font-semibold transition-all ${
+              statusTab === 'Completed'
+                ? 'bg-brand text-paper shadow-md shadow-brand/20'
+                : 'border border-line bg-ink-soft text-paper-muted hover:text-paper'
+            }`}
+          >
+            <CheckCircle2 className="size-4" />
+            Completed ({completedProjects.length})
+          </button>
+        </div>
+
+        {/* Dynamic Search Input */}
+        <div className="relative flex-1 md:max-w-md">
+          <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 size-4 text-paper-muted pointer-events-none" />
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            placeholder="Search projects by name, company, or description..."
+            className="w-full rounded-xl border border-line bg-ink pl-10 pr-10 py-2.5 text-sm text-paper placeholder:text-paper-muted/50 focus:border-brand focus:outline-none transition-colors"
+          />
+          {searchQuery && (
+            <button
+              type="button"
+              onClick={() => handleSearchChange('')}
+              className="absolute right-3 top-1/2 -translate-y-1/2 rounded-full p-1 text-paper-muted hover:text-paper hover:bg-line transition-colors"
+              title="Clear search"
+            >
+              <X className="size-3.5" />
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
@@ -498,151 +570,197 @@ export default function Projects() {
         </div>
       )}
 
-      {displayedProjects.length === 0 && !error ? (
+      {/* Dynamic Search Stats feedback */}
+      {searchQuery && filteredProjects.length > 0 && (
+        <div className="flex items-center justify-between text-xs text-paper-muted">
+          <span>
+            Found <strong className="text-brand">{filteredProjects.length}</strong> project{filteredProjects.length !== 1 ? 's' : ''} matching &quot;{searchQuery}&quot;
+          </span>
+          <button
+            type="button"
+            onClick={() => handleSearchChange('')}
+            className="text-brand hover:underline font-medium"
+          >
+            Clear Search
+          </button>
+        </div>
+      )}
+
+      {filteredProjects.length === 0 && !error ? (
         <EmptyState
           icon={FolderKanban}
-          title={statusTab === 'Active' ? 'No active projects' : 'No completed projects yet'}
+          title={searchQuery ? 'No matching projects' : (statusTab === 'Active' ? 'No active projects' : 'No completed projects yet')}
           description={
-            statusTab === 'Active'
+            searchQuery
+              ? `No projects matched "${searchQuery}". Try searching for another name or keyword.`
+              : statusTab === 'Active'
               ? canManage
                 ? 'Click "New Project" above to create your first project.'
                 : "Projects will appear here once you're assigned to them."
               : 'Completed projects will appear here once archived or marked complete.'
           }
+          action={
+            searchQuery ? (
+              <button
+                type="button"
+                onClick={() => handleSearchChange('')}
+                className="mt-2 flex items-center gap-2 rounded-xl bg-brand px-4 py-2 text-xs font-semibold text-paper"
+              >
+                Clear Search
+              </button>
+            ) : undefined
+          }
         />
       ) : (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ delay: 0.1 }}
-          className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
-        >
-          {displayedProjects.map((project, i) => (
-            <motion.div
-              key={project.id}
-              initial={{ opacity: 0, y: 20 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.3, delay: i * 0.05, ease }}
-              onClick={() => navigate(`/app/tickets?projectId=${project.id}`)}
-              className="group flex flex-col justify-between rounded-2xl border border-line bg-ink-soft p-5 transition-all duration-300 hover:border-cobalt/40 hover:shadow-lg hover:shadow-ink/40 cursor-pointer"
-            >
-              <div>
-                <div className="flex items-start justify-between gap-2">
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="rounded-xl bg-cobalt/15 p-2.5 shrink-0">
-                      <FolderKanban className="size-5 text-cobalt" />
+        <div className="space-y-6">
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.1 }}
+            className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
+          >
+            {paginatedProjects.map((project, i) => (
+              <motion.div
+                key={project.id}
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                transition={{ duration: 0.3, delay: i * 0.05, ease }}
+                onClick={() => navigate(`/app/tickets?projectId=${project.id}`)}
+                className="group flex flex-col justify-between rounded-2xl border border-line bg-ink-soft p-5 transition-all duration-300 hover:border-cobalt/40 hover:shadow-lg hover:shadow-ink/40 cursor-pointer"
+              >
+                <div>
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="rounded-xl bg-cobalt/15 p-2.5 shrink-0">
+                        <FolderKanban className="size-5 text-cobalt" />
+                      </div>
+                      <div className="min-w-0">
+                        <h3 className="truncate font-semibold text-paper group-hover:text-brand transition-colors">
+                          {project.name}
+                        </h3>
+                        {project.companyName && (
+                          <p className="truncate text-xs text-paper-muted">
+                            {project.companyName}
+                          </p>
+                        )}
+                      </div>
                     </div>
-                    <div className="min-w-0">
-                      <h3 className="truncate font-semibold text-paper group-hover:text-brand transition-colors">
-                        {project.name}
-                      </h3>
-                      {project.companyName && (
-                        <p className="truncate text-xs text-paper-muted">
-                          {project.companyName}
-                        </p>
-                      )}
-                    </div>
+
+                    {project.status && (
+                      <Badge
+                        label={project.status}
+                        color={statusColor[project.status] ?? '#6b7280'}
+                        dot
+                        size="sm"
+                      />
+                    )}
                   </div>
 
-                  {project.status && (
-                    <Badge
-                      label={project.status}
-                      color={statusColor[project.status] ?? '#6b7280'}
-                      dot
-                      size="sm"
-                    />
+                  {project.description && (
+                    <p className="mt-3 line-clamp-2 text-sm text-paper-muted">
+                      {project.description}
+                    </p>
                   )}
-                </div>
 
-                {project.description && (
-                  <p className="mt-3 line-clamp-2 text-sm text-paper-muted">
-                    {project.description}
-                  </p>
-                )}
-
-                <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-paper-muted">
-                  <span className="flex items-center gap-1">
-                    <Users className="size-3.5" />
-                    {project.teamSize ?? 0} members
-                  </span>
-                  <span className="flex items-center gap-1">
-                    <Ticket className="size-3.5" />
-                    {project.ticketCount ?? 0} tickets
-                  </span>
-                  {project.createdAt && (
+                  <div className="mt-4 flex flex-wrap items-center gap-4 text-xs text-paper-muted">
                     <span className="flex items-center gap-1">
-                      <Calendar className="size-3.5" />
-                      {new Date(project.createdAt).toLocaleDateString('en-US', {
-                        month: 'short',
-                        day: 'numeric',
-                        year: 'numeric',
-                      })}
+                      <Users className="size-3.5" />
+                      {project.teamSize ?? 0} members
                     </span>
-                  )}
+                    <span className="flex items-center gap-1">
+                      <Ticket className="size-3.5" />
+                      {project.ticketCount ?? 0} tickets
+                    </span>
+                    {project.createdAt && (
+                      <span className="flex items-center gap-1">
+                        <Calendar className="size-3.5" />
+                        {new Date(project.createdAt).toLocaleDateString('en-US', {
+                          month: 'short',
+                          day: 'numeric',
+                          year: 'numeric',
+                        })}
+                      </span>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-              {/* Card Actions */}
-              <div
-                className="mt-5 border-t border-line/60 pt-3 space-y-2"
-                onClick={(e) => e.stopPropagation()}
-              >
-                {/* Row 1: View Tickets */}
-                <Link
-                  to={`/app/tickets?projectId=${project.id}`}
-                  className="flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline"
+                {/* Card Actions */}
+                <div
+                  className="mt-5 border-t border-line/60 pt-3 space-y-2"
+                  onClick={(e) => e.stopPropagation()}
                 >
-                  View Tickets <ArrowRight className="size-3.5" />
-                </Link>
-
-                {/* Row 2: Action Buttons */}
-                <div className="flex flex-wrap items-center gap-2">
-                  {canManage && project.status !== 'Completed' && (
-                    <button
-                      type="button"
-                      onClick={() => handleCompleteProject(project.id, project.name)}
-                      className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition-all active:scale-95"
-                      title="Mark project as Completed"
-                    >
-                      <CheckCircle2 className="size-3.5" />
-                      <span>Complete</span>
-                    </button>
-                  )}
-
+                  {/* Row 1: View Tickets */}
                   <Link
-                    to={`/app/projects/${project.id}`}
-                    className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-paper-muted transition-all hover:border-paper/30 hover:text-paper active:scale-95"
+                    to={`/app/tickets?projectId=${project.id}`}
+                    className="flex items-center gap-1.5 text-xs font-semibold text-brand hover:underline"
                   >
-                    Details
+                    View Tickets <ArrowRight className="size-3.5" />
                   </Link>
 
-                  {canManage && (
-                    <>
+                  {/* Row 2: Action Buttons */}
+                  <div className="flex flex-wrap items-center gap-2">
+                    {canManage && project.status !== 'Completed' && (
                       <button
                         type="button"
-                        onClick={() => openMemberManagement(project)}
-                        className="flex items-center gap-1.5 rounded-lg bg-cobalt/10 px-2.5 py-1.5 text-xs font-semibold text-cobalt transition-all hover:bg-cobalt/20 active:scale-95"
+                        onClick={() => handleCompleteProject(project.id, project.name)}
+                        className="flex items-center gap-1.5 rounded-lg border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-1.5 text-xs font-semibold text-emerald-400 hover:bg-emerald-500/20 transition-all active:scale-95"
+                        title="Mark project as Completed"
                       >
-                        <Users className="size-3.5" />
-                        Team
+                        <CheckCircle2 className="size-3.5" />
+                        <span>Complete</span>
                       </button>
+                    )}
 
-                      <button
-                        type="button"
-                        onClick={() => openEditModal(project)}
-                        className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-paper-muted transition-all hover:border-paper/30 hover:text-paper active:scale-95"
-                      >
-                        <Settings className="size-3.5" />
-                        Edit
-                      </button>
-                    </>
-                  )}
+                    <Link
+                      to={`/app/projects/${project.id}`}
+                      className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-paper-muted transition-all hover:border-paper/30 hover:text-paper active:scale-95"
+                    >
+                      Details
+                    </Link>
+
+                    {canManage && (
+                      <>
+                        <button
+                          type="button"
+                          onClick={() => openMemberManagement(project)}
+                          className="flex items-center gap-1.5 rounded-lg bg-cobalt/10 px-2.5 py-1.5 text-xs font-semibold text-cobalt transition-all hover:bg-cobalt/20 active:scale-95"
+                        >
+                          <Users className="size-3.5" />
+                          Team
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => openEditModal(project)}
+                          className="flex items-center gap-1.5 rounded-lg border border-line px-2.5 py-1.5 text-xs font-medium text-paper-muted transition-all hover:border-paper/30 hover:text-paper active:scale-95"
+                        >
+                          <Settings className="size-3.5" />
+                          Edit
+                        </button>
+                      </>
+                    )}
+                  </div>
                 </div>
-              </div>
 
-            </motion.div>
-          ))}
-        </motion.div>
+              </motion.div>
+            ))}
+          </motion.div>
+
+          {/* Pagination Controls (6 projects per page) */}
+          {filteredProjects.length > PAGE_SIZE && (
+            <div className="rounded-2xl border border-line bg-ink-soft p-4 shadow-sm">
+              <Pagination
+                page={currentPage}
+                pageSize={PAGE_SIZE}
+                total={filteredProjects.length}
+                onPageChange={(p) => {
+                  setCurrentPage(p)
+                  window.scrollTo({ top: 0, behavior: 'smooth' })
+                }}
+              />
+            </div>
+          )}
+        </div>
       )}
 
       {/* ─── MODAL 1: Create Project ────────────────────────────────────────── */}
