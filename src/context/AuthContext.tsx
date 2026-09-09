@@ -64,22 +64,80 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       ? (raw.data as Record<string, unknown>)
       : raw
 
+    const token =
+      (d.token as string) ||
+      (d.Token as string) ||
+      (d.accessToken as string) ||
+      (d.AccessToken as string) ||
+      (d.jwt as string) ||
+      ''
+
+    const refreshToken =
+      (d.refreshToken as string) ||
+      (d.RefreshToken as string) ||
+      ''
+
+    const userId =
+      (d.userId as number) ??
+      (d.UserId as number) ??
+      (d.id as number) ??
+      (d.Id as number) ??
+      0
+
+    const email =
+      (d.email as string) ||
+      (d.Email as string) ||
+      ''
+
+    const firstName =
+      (d.firstName as string) ||
+      (d.FirstName as string) ||
+      ''
+
+    const lastName =
+      (d.lastName as string) ||
+      (d.LastName as string) ||
+      ''
+
+    const role =
+      (d.role as string) ||
+      (d.Role as string) ||
+      (d.userType as string) ||
+      (d.UserType as string) ||
+      'Employee'
+
     return {
-      userId: (d.userId as number) ?? 0,
-      email: (d.email as string) ?? '',
-      firstName: (d.firstName as string) ?? '',
-      lastName: (d.lastName as string) ?? '',
-      role: (d.role as string) ?? (d.userType as string) ?? 'Employee',
-      token: (d.token as string) ?? '',
-      refreshToken: (d.refreshToken as string) ?? '',
+      userId,
+      email,
+      firstName,
+      lastName,
+      role,
+      token,
+      refreshToken,
     }
   }
 
   const login = useCallback(
     async (payload: LoginPayload) => {
-      const { data } = await api.post('/auth/login', payload)
-      if (data.success === false) throw new Error(data.message ?? 'Login failed')
-      const user = normalizeAuthUser(data)
+      let resData: unknown
+      try {
+        const { data } = await api.post('/auth/login', payload)
+        resData = data
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } })?.response?.status
+        if (status === 404) {
+          const { data } = await api.post('/Auth/login', payload)
+          resData = data
+        } else {
+          throw err
+        }
+      }
+      const resp = resData as Record<string, unknown>
+      if (resp.success === false) throw new Error((resp.message as string) ?? 'Login failed')
+      const user = normalizeAuthUser(resp)
+      if (!user.token) {
+        throw new Error('Authentication token not received from server')
+      }
       persist(user)
     },
     [persist],
@@ -87,10 +145,25 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const register = useCallback(
     async (payload: RegisterPayload) => {
-      const { data } = await api.post('/auth/register', payload)
-      if (data.success === false) throw new Error(data.message ?? 'Registration failed')
-      const user = normalizeAuthUser(data)
-      persist(user)
+      let resData: unknown
+      try {
+        const { data } = await api.post('/auth/register', payload)
+        resData = data
+      } catch (err: unknown) {
+        const status = (err as { response?: { status?: number } })?.response?.status
+        if (status === 404) {
+          const { data } = await api.post('/Auth/register', payload)
+          resData = data
+        } else {
+          throw err
+        }
+      }
+      const resp = resData as Record<string, unknown>
+      if (resp.success === false) throw new Error((resp.message as string) ?? 'Registration failed')
+      const user = normalizeAuthUser(resp)
+      if (user.token) {
+        persist(user)
+      }
     },
     [persist],
   )

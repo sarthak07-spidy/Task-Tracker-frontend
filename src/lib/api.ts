@@ -67,10 +67,11 @@ api.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config
     const url = (originalRequest?.url as string) || ''
+    const urlLower = url.toLowerCase()
     const isAuthEndpoint =
-      url.includes('/auth/login') ||
-      url.includes('/auth/register') ||
-      url.includes('/auth/refresh')
+      urlLower.includes('/auth/login') ||
+      urlLower.includes('/auth/register') ||
+      urlLower.includes('/auth/refresh')
 
     // If 401 and not an auth endpoint
     if (error.response?.status === 401 && !isAuthEndpoint) {
