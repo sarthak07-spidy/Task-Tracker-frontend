@@ -74,12 +74,8 @@ export default function StatusDropdown({
             // Hide raw Closed option — 'Completed' key is shown instead
             if (isClosed) return null
 
-            // Rejected: hide from assigner/creator
+            // Rejected: hide only from assigner/creator (assigner cannot reject own ticket)
             if (isRejected && isAssigner) return null
-
-            // Rejected: only show if ticket was NEVER changed (canReject = true from parent)
-            // Once any status change happened → permanently hidden
-            if (isRejected && !canReject) return null
 
             return (
               <button
@@ -89,8 +85,6 @@ export default function StatusDropdown({
                   if (isRejected && onOpenRejectModal) {
                     onOpenRejectModal()
                   } else {
-                    // Completed goes through onStatusChange → handleStatusChange
-                    // which shows a toast telling user to use the Complete button when InReview
                     onStatusChange(key)
                   }
                   setOpen(false)
@@ -108,11 +102,6 @@ export default function StatusDropdown({
                   />
                   {label}
                 </span>
-                {isCompleted && (
-                  <span className="text-[10px] font-semibold text-paper-muted/60 rounded-full border border-line px-1.5 py-0.5">
-                    {isInReview && isAssigner ? '← button' : 'InReview first'}
-                  </span>
-                )}
               </button>
             )
           })}

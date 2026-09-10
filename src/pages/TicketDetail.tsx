@@ -274,31 +274,6 @@ export default function TicketDetail() {
         String(ticket.status) === '6')
   )
 
-  // isFinalized = only Closed or Rejected tickets cannot be edited, commented on, or deleted.
-  // Tickets with status Completed can still be edited and have their status changed.
-  const isFinalized = isClosed || isRejected
-
-  // Complete button is strictly visible ONLY to the assigner, and ONLY when status is In Review
-  const canComplete = isInReview && isAssigner
-
-  // Reject button: ONLY visible when ticket was NEVER status-changed before.
-  // ticket.history tracks all status changes. If ANY entry exists → Reject is permanently gone.
-  // This means: created as Open → Reject shows. Status changed even once → Reject gone forever.
-  const statusNeverChanged = !ticket?.history || ticket.history.length === 0
-  const canRejectAssignment = Boolean(
-    !isFinalized && isAssigned && isOpen && statusNeverChanged
-  )
-
-  const isManager =
-    user?.role === 'Manager' ||
-    user?.role === 'SuperAdmin' ||
-    user?.role === 'TeamLead'
-  // canEdit is blocked when ticket is finalized
-  const canEdit = !isFinalized && (isCreator || isAssigned || isManager)
-  const canDelete = !isFinalized && isCreator
-  const canMarkForReview = !isFinalized && (isAssigned || isManager)
-  const canApprove = isManager && isInReview
-
   // Completion review details (from approvalRemark, ticket history, or comments thread)
   const completionReview = useMemo(() => {
     if (!ticket) return null
@@ -358,6 +333,64 @@ export default function TicketDetail() {
 
     return null
   }, [ticket, comments])
+
+  // Official completion: ONLY true when ticket was officially reviewed & completed by the assigner.
+  // Mere status update to "Completed" does NOT lock/archive the ticket.
+  const isOfficiallyCompleted = Boolean(
+    ticket &&
+      (localStorage.getItem(`ticket_${ticket.id}_officially_completed`) === 'true' ||
+        ticket.approvalStatus === 'Approved' ||
+        (ticket.approvalRemark && ticket.approvalRemark.trim().length > 0) ||
+        (completionReview &&
+          completionReview.text &&
+          ticket.history?.some(
+            (h) =>
+              h.action?.toLowerCase().includes('complet') ||
+              h.action?.toLowerCase().includes('approv'),
+          )))
+  )
+
+  // Finalized tickets (read-only): ONLY if rejected OR officially completed with review.
+  // Regular status "Completed" from dropdown does NOT finalize the ticket — it remains normally editable.
+  const isFinalized = isRejected || isOfficiallyCompleted
+
+  const isStatusCompleted = Boolean(
+    ticket &&
+      (ticket.status === 'Completed' ||
+        ticket.status === 'Closed' ||
+        ticket.status === 'Close' ||
+        ticket.status === 4 ||
+        ticket.status === 5 ||
+        String(ticket.status).toLowerCase() === 'completed' ||
+        String(ticket.status).toLowerCase() === 'closed')
+  )
+
+  // Complete button is strictly visible ONLY to the assigner, when status is In Review OR Completed,
+  // and the ticket is not yet officially completed
+  const canComplete =
+    (isInReview || isStatusCompleted) && isAssigner && !isOfficiallyCompleted
+
+  // Reject button: ONLY visible when ticket was NEVER status-changed before.
+  // ticket.history tracks all status changes. If ANY entry exists or status changed once → Reject is permanently gone.
+  // This means: created as Open → Reject shows. Status changed even once → Reject gone forever.
+  const localStatusChanged = ticket
+    ? localStorage.getItem(`ticket_${ticket.id}_has_status_change`) === 'true'
+    : false
+  const statusNeverChanged =
+    (!ticket?.history || ticket.history.length === 0) && !localStatusChanged
+  const canRejectAssignment = Boolean(
+    !isFinalized && isAssigned && isOpen && statusNeverChanged
+  )
+
+  const isManager =
+    user?.role === 'Manager' ||
+    user?.role === 'SuperAdmin' ||
+    user?.role === 'TeamLead'
+  // canEdit is blocked ONLY when ticket is finalized (rejected or officially reviewed)
+  const canEdit = !isFinalized && (isCreator || isAssigned || isManager)
+  const canDelete = !isFinalized && isCreator
+  const canMarkForReview = !isFinalized && (isAssigned || isManager)
+  const canApprove = isManager && isInReview
 
   // Rejection reason details (if rejected)
   const rejectionDetail = useMemo(() => {
@@ -504,15 +537,10 @@ export default function TicketDetail() {
       String(status).toLowerCase() === 'completed'
 
     if (isCompletedAttempt) {
-      // Completion can ONLY happen via the dedicated "Complete" button when ticket is InReview.
-      // Selecting "Completed" from dropdown is not allowed.
-      toast(
-        'error',
-        isInReview && isAssigner
-          ? 'Please use the "Complete" button below to finalize this ticket.'
-          : 'Ticket must be "In Review" before it can be completed. Ask the assignee to mark it for review first.'
-      )
-      return
+      // Dropdown "Completed" = regular status change only (status becomes Closed/Completed).
+      // Full official completion (with review) is done via the "Complete" button when InReview.
+      // Map "Completed" → "Closed" for the backend status API.
+      status = 'Closed'
     }
 
     const isRejectedAttempt =
@@ -531,16 +559,8 @@ export default function TicketDetail() {
       return
     }
 
-    const isClosedAttempt =
-      status === 'Closed' ||
-      status === 'Close' ||
-      status === '5' ||
-      String(status).toLowerCase() === 'closed'
-
-    if (isClosedAttempt && isAssigned && !isAssigner) {
-      toast('error', 'Assignee cannot close this ticket.')
-      return
-    }
+    // Note: Completed/Closed status is allowed for everyone — assignee marks it to signal
+    // "work done, ready for review". Official completion with review is via the Complete button.
 
     setStatusLoading(true)
     try {
@@ -555,6 +575,10 @@ export default function TicketDetail() {
         }
       }
       toast('success', 'Status updated')
+      if (id) {
+        localStorage.setItem(`ticket_${id}_has_status_change`, 'true')
+        localStorage.removeItem(`ticket_${id}_officially_completed`)
+      }
       silentRefresh()
     } catch (err: unknown) {
       toast(
@@ -623,6 +647,9 @@ export default function TicketDetail() {
       toast('success', 'Ticket completed successfully!')
       setCompleteModalOpen(false)
       setReviewComment('')
+      if (id) {
+        localStorage.setItem(`ticket_${id}_officially_completed`, 'true')
+      }
       silentRefresh()
     } catch (err: unknown) {
       toast(

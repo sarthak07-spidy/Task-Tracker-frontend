@@ -164,7 +164,7 @@ export default function CommentThread({
       </div>
 
       {/* ─── Messages List ────────────────────────────────────────────────────── */}
-      <div className="flex flex-col gap-4 p-5 max-h-[520px] min-h-[220px] overflow-y-auto crazy-chat-scroll">
+      <div className="flex flex-col gap-4 p-5 max-h-[320px] min-h-[180px] overflow-y-auto chat-scroll">
         {comments.length === 0 ? (
           <div className="my-auto flex flex-col items-center justify-center py-12 text-center">
             <div className="mb-3 flex size-12 items-center justify-center rounded-2xl bg-line text-paper-muted">
