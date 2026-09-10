@@ -1394,46 +1394,17 @@ export default function TicketDetail() {
 
               {/* Complete button is strictly visible ONLY to the assigner */}
               {canComplete && (
-                <div className="mt-4 flex gap-2">
+                <div className="mt-4">
                   <button
                     type="button"
                     onClick={() => {
                       setReviewComment('')
                       setCompleteModalOpen(true)
                     }}
-                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-paper shadow-lg shadow-emerald-950/40 transition-all hover:bg-emerald-500 cursor-pointer"
+                    className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-paper shadow-lg shadow-emerald-950/40 transition-all hover:bg-emerald-500 cursor-pointer"
                   >
                     <CheckCircle2 className="size-4" />
                     Complete Ticket
-                  </button>
-                  <button
-                    type="button"
-                    onClick={async () => {
-                      const reason = prompt('Please specify why this ticket is being sent back:')
-                      if (!reason) return
-                      try {
-                        await api.put(`/tickets/${id}/reject-completion`, {
-                          rejectionReason: reason,
-                        })
-                        try {
-                          await api.post(`/tickets/${id}/comments`, {
-                            content: `⚠️ **Changes Requested**: ${reason}`,
-                          })
-                        } catch {}
-                        toast('info', 'Ticket sent back for changes')
-                        silentRefresh()
-                      } catch (err: unknown) {
-                        toast(
-                          'error',
-                          (err as { response?: { data?: { message?: string } } })?.response?.data
-                            ?.message ?? 'Failed to send back ticket',
-                        )
-                      }
-                    }}
-                    className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs font-semibold text-red-400 transition-colors hover:bg-red-500/20 cursor-pointer"
-                    title="Send back for changes"
-                  >
-                    Send Back
                   </button>
                 </div>
               )}

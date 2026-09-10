@@ -1,5 +1,6 @@
 import { motion, useScroll, useTransform } from 'framer-motion'
 import { useRef } from 'react'
+import { Link } from 'react-router-dom'
 import { AlertTriangle, CheckCircle2, type LucideIcon } from 'lucide-react'
 import TiltCard from './TiltCard'
 
@@ -136,22 +137,22 @@ function StoryBlock({
 
 function ChaosVisual() {
   const bars = [
-    { w: 34, x: 4, y: 0, c: 'bg-brand/70' },
-    { w: 18, x: 58, y: 1, c: 'bg-paper/25' },
-    { w: 26, x: 22, y: 2, c: 'bg-amber/60' },
-    { w: 12, x: 70, y: 3, c: 'bg-brand/40' },
-    { w: 40, x: 10, y: 4, c: 'bg-paper/20' },
-    { w: 16, x: 48, y: 5, c: 'bg-cobalt/50' },
-    { w: 22, x: 66, y: 6, c: 'bg-paper/25' },
+    { w: 38, x: 4, y: 0, c: 'bg-red-500/70' },
+    { w: 22, x: 54, y: 1, c: 'bg-paper/25' },
+    { w: 30, x: 18, y: 2, c: 'bg-amber/60' },
+    { w: 16, x: 68, y: 3, c: 'bg-red-500/40' },
+    { w: 44, x: 8, y: 4, c: 'bg-paper/20' },
+    { w: 20, x: 52, y: 5, c: 'bg-cobalt/50' },
+    { w: 26, x: 62, y: 6, c: 'bg-paper/25' },
   ]
   return (
     <div>
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-paper-muted">
-          Monday · 7 sources
+          Sprint 2 · Scattered Tasks
         </p>
-        <span className="rounded-full bg-brand/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-brand">
-          4.2h missing
+        <span className="rounded-full bg-red-500/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-red-400">
+          3 Overdue Tickets
         </span>
       </div>
       <div className="relative mt-6 h-[240px]">
@@ -171,10 +172,10 @@ function ChaosVisual() {
           whileInView={{ opacity: 1, scale: 1 }}
           viewport={{ once: true }}
           transition={{ duration: 0.7, delay: 1, ease }}
-          className="absolute -bottom-2 right-0 rounded-xl border border-brand/40 bg-ink px-3 py-2 text-xs shadow-lg"
+          className="absolute -bottom-2 right-0 rounded-xl border border-red-500/40 bg-ink px-3.5 py-2.5 text-xs shadow-xl"
         >
-          <p className="font-semibold text-brand">Invoice mismatch</p>
-          <p className="text-paper-muted">Client billed 31h · logged 26.8h</p>
+          <p className="font-semibold text-red-400">Blocked Ticket #18</p>
+          <p className="text-paper-muted mt-0.5">No assignee · Due 2 days ago · Zero updates</p>
         </motion.div>
       </div>
     </div>
@@ -183,28 +184,28 @@ function ChaosVisual() {
 
 function OrderVisual() {
   const rows = [
-    { label: 'Design review', w: 30, c: 'bg-brand' },
-    { label: 'Frontend build', w: 58, c: 'bg-amber' },
-    { label: 'Client call', w: 18, c: 'bg-cobalt' },
-    { label: 'QA & handoff', w: 40, c: 'bg-paper/70' },
+    { label: 'Auth & Security', w: 100, c: 'bg-emerald-500', status: 'Completed', color: '#22c55e' },
+    { label: 'API Status Engine', w: 75, c: 'bg-purple-500', status: 'In Review', color: '#a855f7' },
+    { label: 'UI Dashboard', w: 55, c: 'bg-amber-500', status: 'In Progress', color: '#f59e0b' },
+    { label: 'Bug Ticket #14', w: 25, c: 'bg-blue-500', status: 'Open', color: '#3b82f6' },
   ]
   return (
     <div>
       <div className="flex items-center justify-between">
         <p className="text-xs font-semibold uppercase tracking-[0.2em] text-paper-muted">
-          Monday · one timeline
+          Active Sprint · Task Pipeline
         </p>
-        <span className="inline-flex items-center gap-1 rounded-full bg-cobalt/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-cobalt">
-          <CheckCircle2 className="size-3" /> 100% captured
+        <span className="inline-flex items-center gap-1 rounded-full bg-emerald-500/15 px-2.5 py-1 text-[10px] font-bold uppercase tracking-wider text-emerald-400">
+          <CheckCircle2 className="size-3" /> 100% Tracked
         </span>
       </div>
-      <div className="mt-6 flex flex-col gap-4">
+      <div className="mt-6 flex flex-col gap-3.5">
         {rows.map((r, i) => (
-          <div key={r.label} className="flex items-center gap-4">
-            <span className="w-28 shrink-0 text-xs text-paper-muted sm:text-sm">
+          <div key={r.label} className="flex items-center gap-3">
+            <span className="w-28 shrink-0 text-xs font-medium text-paper sm:text-sm truncate">
               {r.label}
             </span>
-            <div className="h-7 flex-1 overflow-hidden rounded-md bg-paper/5">
+            <div className="h-6 flex-1 overflow-hidden rounded-md bg-paper/5">
               <motion.div
                 initial={{ width: 0 }}
                 whileInView={{ width: `${r.w}%` }}
@@ -213,6 +214,12 @@ function OrderVisual() {
                 className={`h-full rounded-md ${r.c}`}
               />
             </div>
+            <span
+              className="text-[10px] sm:text-[11px] font-semibold shrink-0 w-20 text-right"
+              style={{ color: r.color }}
+            >
+              {r.status}
+            </span>
           </div>
         ))}
       </div>
@@ -221,18 +228,18 @@ function OrderVisual() {
         whileInView={{ opacity: 1, y: 0 }}
         viewport={{ once: true }}
         transition={{ duration: 0.7, delay: 1, ease }}
-        className="mt-6 flex items-end justify-between rounded-2xl bg-ink/60 p-4"
+        className="mt-6 flex items-center justify-between rounded-2xl bg-ink/70 border border-emerald-500/20 p-4"
       >
         <div>
-          <p className="text-xs text-paper-muted">Ready to invoice</p>
-          <p className="font-display text-2xl font-bold">7h 20m</p>
+          <p className="text-[11px] text-paper-muted uppercase tracking-wider">Ticket #10 · In Review</p>
+          <p className="font-display text-base sm:text-lg font-bold text-emerald-400">Ready for Assigner Review</p>
         </div>
-        <button
-          type="button"
-          className="rounded-full bg-paper px-4 py-2 text-xs font-semibold text-ink transition-transform hover:scale-105"
+        <Link
+          to="/auth"
+          className="rounded-full bg-emerald-600 px-3.5 py-2 text-xs font-semibold text-paper transition-transform hover:scale-105 hover:bg-emerald-500 shadow-md shadow-emerald-950/40"
         >
-          Send invoice
-        </button>
+          Review & Complete ✓
+        </Link>
       </motion.div>
     </div>
   )
@@ -243,40 +250,40 @@ export default function ProblemSolution() {
     <>
       <StoryBlock
         id="problem"
-        eyebrow="The problem"
+        eyebrow="The Challenge"
         icon={AlertTriangle}
         accent="brand"
         title={
           <>
-            Time leaks through
-            <span className="text-brand"> every crack.</span>
+            Tasks get lost.
+            <span className="text-brand"> Deadlines slip into chaos.</span>
           </>
         }
-        body="Teams juggle timers, spreadsheets, chat threads and memory. By Friday nobody knows where the week actually went, and clients get billed on guesses."
+        body="Teams juggle tasks across chats, spreadsheets, and emails. Without a structured workflow, nobody knows who owns what, tickets get blocked in silence, and deliverables finish without review or accountability."
         points={[
-          'Hours vanish between tools that never talk to each other.',
-          'Timesheets get filled in from memory, days later.',
-          'Invoices drift from reality and trust erodes.',
+          'Unclear ownership: Tasks assigned verbally or in chats vanish without a trace.',
+          'Zero progress transparency: Is it In Progress, stuck, or ready for review? Nobody knows.',
+          'Unverified completion: Work gets marked "done" without manager review or logged hours.',
         ]}
         visual={<ChaosVisual />}
       />
       <StoryBlock
         id="solution"
-        eyebrow="The solution"
+        eyebrow="The Solution"
         icon={CheckCircle2}
         accent="cobalt"
         reverse
         title={
           <>
-            One timeline.
-            <span className="text-gradient-brand"> Zero guesswork.</span>
+            One unified pipeline.
+            <span className="text-gradient-brand"> Complete clarity.</span>
           </>
         }
-        body="T-tracker captures work as it happens, links every minute to a project and a person, and turns it into reports and invoices in one tap."
+        body="T-Tracker streamlines your entire project workflow from assignment to review. Assign tickets with priorities, track real-time status transitions, log actual hours, and close tasks with structured manager reviews."
         points={[
-          'Start a timer anywhere; it follows you across devices.',
-          'Live team view shows who is on what, right now.',
-          'Invoices generate themselves from verified hours.',
+          'Structured ticket lifecycle: Open ➔ In Progress ➔ In Review ➔ Completed.',
+          'Assigner review gate: Verify deliverables and add completion remarks before tickets close.',
+          'In-ticket discussion & time tracking: Keep conversations, blockers, and logged hours in one place.',
         ]}
         visual={<OrderVisual />}
       />
