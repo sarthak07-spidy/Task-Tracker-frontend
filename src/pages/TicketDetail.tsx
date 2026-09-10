@@ -195,7 +195,18 @@ export default function TicketDetail() {
           Number(ticket.assignedToUserId) === Number(user.userId)) ||
         (assignedEmail &&
           user.email &&
-          assignedEmail.toLowerCase().trim() === user.email.toLowerCase().trim())
+          assignedEmail.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
+        (ticket.assignedToEmail &&
+          user.email &&
+          ticket.assignedToEmail.toLowerCase().trim() === user.email.toLowerCase().trim()) ||
+        (ticket.assignedToName &&
+          user &&
+          (
+            `${user.firstName || ''} ${user.lastName || ''}`.trim().toLowerCase() === ticket.assignedToName.trim().toLowerCase() ||
+            (user.firstName && ticket.assignedToName.toLowerCase().includes(user.firstName.toLowerCase().trim())) ||
+            (user.email && ticket.assignedToName.toLowerCase().includes(user.email.split('@')[0].split('.')[0].toLowerCase()))
+          )) ||
+        (!isCreator && Boolean(ticket.assignedToName || ticket.assignedToUserId))
       )
   )
 
@@ -242,13 +253,6 @@ export default function TicketDetail() {
         TicketStatusLabel[ticket.status] === 'Open')
   )
 
-  // Rejection rule: ONLY the person to whom the ticket is assigned can reject it,
-  // and ONLY while status is Open. As soon as status is changed away from Open, reject button disappears!
-  const canRejectAssignment = Boolean(isAssigned && isOpen)
-
-  // Complete button is strictly visible ONLY to the assigner, and ONLY when status is In Review
-  const canComplete = isInReview && isAssigner
-
   // Ticket is fully finalized — no edits, no new comments, no status changes allowed
   const isClosed = Boolean(
     ticket &&
@@ -273,6 +277,17 @@ export default function TicketDetail() {
   // isFinalized = only Closed or Rejected tickets cannot be edited, commented on, or deleted.
   // Tickets with status Completed can still be edited and have their status changed.
   const isFinalized = isClosed || isRejected
+
+  // Complete button is strictly visible ONLY to the assigner, and ONLY when status is In Review
+  const canComplete = isInReview && isAssigner
+
+  // Reject button: ONLY visible when ticket was NEVER status-changed before.
+  // ticket.history tracks all status changes. If ANY entry exists → Reject is permanently gone.
+  // This means: created as Open → Reject shows. Status changed even once → Reject gone forever.
+  const statusNeverChanged = !ticket?.history || ticket.history.length === 0
+  const canRejectAssignment = Boolean(
+    !isFinalized && isAssigned && isOpen && statusNeverChanged
+  )
 
   const isManager =
     user?.role === 'Manager' ||
@@ -453,7 +468,18 @@ export default function TicketDetail() {
       const { data } = await api.get(`/tickets/${id}/comments-thread`)
       const cData = (data?.success && data?.data) ? data.data : data
       if (cData) {
-        setComments(cData as CommentThreadType)
+        const rawComments = Array.isArray(cData.comments) ? cData.comments : []
+        const mappedComments = rawComments.map((c: Record<string, unknown>) => ({
+          ...c,
+          content: (c.content as string) || (c.message as string) || '',
+          message: (c.message as string) || (c.content as string) || '',
+        }))
+        setComments({
+          ticketId: Number(cData.ticketId ?? id),
+          ticketTitle: (cData.ticketTitle as string) || '',
+          totalComments: rawComments.length,
+          comments: mappedComments,
+        })
       }
     } catch {
       // Comments may be empty or not created yet
@@ -478,16 +504,14 @@ export default function TicketDetail() {
       String(status).toLowerCase() === 'completed'
 
     if (isCompletedAttempt) {
-      if (!isInReview) {
-        toast('error', 'Ticket can only be completed when its status is In Review.')
-        return
-      }
-      if (!isAssigner) {
-        toast('error', 'Only the person who assigned this ticket can complete it.')
-        return
-      }
-      setReviewComment('')
-      setCompleteModalOpen(true)
+      // Completion can ONLY happen via the dedicated "Complete" button when ticket is InReview.
+      // Selecting "Completed" from dropdown is not allowed.
+      toast(
+        'error',
+        isInReview && isAssigner
+          ? 'Please use the "Complete" button below to finalize this ticket.'
+          : 'Ticket must be "In Review" before it can be completed. Ask the assignee to mark it for review first.'
+      )
       return
     }
 
@@ -498,12 +522,8 @@ export default function TicketDetail() {
       String(status).toLowerCase() === 'rejected'
 
     if (isRejectedAttempt) {
-      if (!isAssigned) {
-        toast('error', 'Only the assigned user can reject this ticket.')
-        return
-      }
-      if (!isOpen) {
-        toast('error', 'Ticket assignment can only be rejected while status is Open.')
+      if (isAssigner) {
+        toast('error', 'The assigner cannot reject this ticket.')
         return
       }
       setRejectReason('')
@@ -590,10 +610,14 @@ export default function TicketDetail() {
       // 2. Also post review comment into thread for transparency
       try {
         await api.post(`/tickets/${id}/comments`, {
-          content: `📋 **Completion Review**: ${review}`,
+          message: `📋 **Completion Review**: ${review}`,
         })
       } catch {
-        // non-blocking
+        try {
+          await api.post(`/tickets/${id}/comments`, {
+            content: `📋 **Completion Review**: ${review}`,
+          })
+        } catch {}
       }
 
       toast('success', 'Ticket completed successfully!')
@@ -611,7 +635,7 @@ export default function TicketDetail() {
     }
   }
 
-  // Assignee rejects assignment while ticket is Open
+  // Assignee rejects assignment
   async function handleRejectAssignment() {
     if (!ticket) return
     const reason = rejectReason.trim()
@@ -622,34 +646,46 @@ export default function TicketDetail() {
 
     setRejectLoading(true)
     try {
-      // Primary: PUT /api/tickets/{id}/reject with RejectionReason
+      // Primary: PUT /api/tickets/{id}/reject with RejectionReason (documented contract)
       try {
         await api.put(`/tickets/${id}/reject`, {
           RejectionReason: reason,
         })
       } catch (e: unknown) {
         const status = (e as { response?: { status?: number } })?.response?.status
-        if (status === 404 || status === 405) {
+        if (status === 404 || status === 405 || status === 400) {
           try {
             await api.put(`/Tickets/${id}/reject`, {
               RejectionReason: reason,
             })
           } catch {
-            await api.put(`/tickets/${id}/rejected`, {
-              RejectionReason: reason,
-            })
+            try {
+              await api.put(`/tickets/${id}/reject`, {
+                rejectionReason: reason,
+              })
+            } catch {
+              await api.put(`/Tickets/${id}/reject`, {
+                rejectionReason: reason,
+              })
+            }
           }
         } else {
           throw e
         }
       }
 
-      // Add comment thread entry for assignment rejection
+      // Add chat thread entry for assignment rejection
       try {
         await api.post(`/tickets/${id}/comments`, {
-          content: `❌ **Assignment Rejected by Assignee**: ${reason}`,
+          message: `❌ **Assignment Rejected**: ${reason}`,
         })
-      } catch {}
+      } catch {
+        try {
+          await api.post(`/tickets/${id}/comments`, {
+            content: `❌ **Assignment Rejected**: ${reason}`,
+          })
+        } catch {}
+      }
 
       toast('info', 'Ticket assignment has been rejected.')
       setRejectModalOpen(false)
@@ -759,14 +795,46 @@ export default function TicketDetail() {
     }
   }
 
-  async function handleAddComment(payload: AddCommentPayload) {
-    await api.post(`/tickets/${id}/comments`, payload)
-    toast('success', 'Comment added')
-    // Refresh comments
-    const { data } = await api.get<ApiResponse<CommentThreadType>>(
-      `/tickets/${id}/comments-thread`,
-    )
-    if (data.success) setComments(data.data)
+  async function handleAddComment(payload: { message?: string; content?: string }) {
+    const text = (payload.message || payload.content || '').trim()
+    if (!text) return
+
+    try {
+      await api.post(`/tickets/${id}/comments`, {
+        message: text,
+      })
+    } catch {
+      try {
+        await api.post(`/tickets/${id}/comments`, {
+          content: text,
+        })
+      } catch {
+        await api.post(`/Tickets/${id}/comments`, {
+          message: text,
+        })
+      }
+    }
+    toast('success', 'Message sent')
+
+    // Refresh comments thread from GET /api/tickets/{id}/comments-thread
+    try {
+      const { data } = await api.get(`/tickets/${id}/comments-thread`)
+      const cData = (data?.success && data?.data) ? data.data : data
+      if (cData) {
+        const rawComments = Array.isArray(cData.comments) ? cData.comments : []
+        const mappedComments = rawComments.map((c: Record<string, unknown>) => ({
+          ...c,
+          content: (c.content as string) || (c.message as string) || '',
+          message: (c.message as string) || (c.content as string) || '',
+        }))
+        setComments({
+          ticketId: Number(cData.ticketId ?? id),
+          ticketTitle: (cData.ticketTitle as string) || '',
+          totalComments: rawComments.length,
+          comments: mappedComments,
+        })
+      }
+    } catch {}
   }
 
   function openEdit() {
@@ -911,14 +979,10 @@ export default function TicketDetail() {
                       currentStatus={ticket.status}
                       onStatusChange={handleStatusChange}
                       disabled={statusLoading}
-                      canComplete={canComplete}
                       isInReview={isInReview}
                       isAssigned={isAssigned}
                       isAssigner={isAssigner}
-                      onOpenCompleteModal={() => {
-                        setReviewComment('')
-                        setCompleteModalOpen(true)
-                      }}
+                      canReject={canRejectAssignment}
                       onOpenRejectModal={() => {
                         setRejectReason('')
                         setRejectModalOpen(true)
@@ -947,6 +1011,22 @@ export default function TicketDetail() {
                   >
                     <CheckCircle2 className="size-4" />
                     <span>Complete</span>
+                  </button>
+                )}
+
+                {/* Reject Button for Assignee: easily accessible right in the action bar */}
+                {canRejectAssignment && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRejectReason('')
+                      setRejectModalOpen(true)
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/10 px-3.5 py-2.5 text-xs font-semibold text-red-400 shadow-sm transition-all hover:bg-red-500/20 cursor-pointer"
+                    title="Reject ticket assignment"
+                  >
+                    <XCircle className="size-4" />
+                    <span>Reject</span>
                   </button>
                 )}
 
@@ -988,12 +1068,12 @@ export default function TicketDetail() {
                         isRejected ? 'text-red-400' : 'text-emerald-400'
                       }`}
                     >
-                      {isRejected ? 'Ticket Rejected' : 'Ticket Completed & Closed'}
+                      {isRejected ? 'Ticket Rejected' : 'Ticket Completed'}
                     </p>
                     <p className="mt-0.5 text-xs text-paper-muted leading-relaxed">
                       {isRejected
                         ? 'This ticket was rejected. It is archived and no further changes can be made.'
-                        : 'This ticket has been completed and closed. It is now read-only and archived.'}
+                        : 'This ticket has been completed. It is now read-only and archived.'}
                     </p>
                   </div>
                 </div>
@@ -1087,37 +1167,40 @@ export default function TicketDetail() {
             )}
           </div>
 
-          {/* Comments — read-only when ticket is finalized */}
-          <div
-            className={`rounded-2xl border p-6 ${
-              isFinalized
-                ? isRejected
-                  ? 'border-red-500/20 bg-ink-soft'
-                  : 'border-emerald-500/20 bg-ink-soft'
-                : 'border-line bg-ink-soft'
-            }`}
-          >
-            <div className="flex items-center gap-2 mb-4">
-              <h2 className="font-display text-lg font-bold text-paper">
-                Comments ({comments?.totalComments ?? 0})
-              </h2>
-              {isFinalized && (
-                <span
-                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
-                    isRejected
-                      ? 'bg-red-500/15 text-red-400'
-                      : 'bg-emerald-500/15 text-emerald-400'
-                  }`}
-                >
-                  <Lock className="size-2.5" />
-                  Read-only
-                </span>
-              )}
-            </div>
+          {/* Live Ticket Chat & Discussion */}
+          <div className="mt-2">
             <CommentThread
+              ticketId={Number(id)}
               comments={comments?.comments ?? []}
               onAddComment={handleAddComment}
               readOnly={isFinalized}
+              onRealtimeMessage={(newMsg) => {
+                setComments((prev) => {
+                  const formatted = {
+                    id: newMsg.id,
+                    ticketId: newMsg.ticketId,
+                    userName: newMsg.userName,
+                    message: newMsg.message,
+                    content: newMsg.message,
+                    createdAt: newMsg.createdAt,
+                  }
+                  if (!prev) {
+                    return {
+                      ticketId: Number(id),
+                      ticketTitle: ticket?.title || '',
+                      totalComments: 1,
+                      comments: [formatted],
+                    }
+                  }
+                  const exists = prev.comments.some((c) => c.id === newMsg.id)
+                  if (exists) return prev
+                  return {
+                    ...prev,
+                    totalComments: (prev.totalComments || prev.comments.length) + 1,
+                    comments: [...prev.comments, formatted],
+                  }
+                })
+              }}
             />
           </div>
         </motion.div>
@@ -1330,7 +1413,7 @@ export default function TicketDetail() {
             </div>
           )}
 
-          {/* Assignee Rejection Card: ONLY visible to assignee when ticket is Open */}
+          {/* Assignee Rejection Card */}
           {canRejectAssignment && (
             <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-5">
               <div className="flex items-center justify-between">
@@ -1339,11 +1422,11 @@ export default function TicketDetail() {
                   Reject Assignment
                 </h3>
                 <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-semibold text-red-300">
-                  Assignee Only
+                  Assignee Action
                 </span>
               </div>
               <p className="mt-2 text-xs text-paper-muted leading-relaxed">
-                You can reject this assignment if you are unable to work on this ticket. This option is only available while the ticket status is <span className="font-semibold text-paper">Open</span>.
+                You can reject this assignment if you are unable to work on this ticket.
               </p>
               <div className="mt-4">
                 <button

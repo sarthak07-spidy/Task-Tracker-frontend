@@ -4,7 +4,7 @@ export const statusMapping: Record<string, string> = {
   InProgress: 'In Progress',
   InReview: 'In Review',
   Completed: 'Completed',
-  Closed: 'Closed',
+  Closed: 'Completed',
   Rejected: 'Rejected',
   OnHold: 'On Hold',
 }
@@ -26,8 +26,8 @@ export const TicketStatusLabel: Record<string | number, string> = {
   InProgress: 'In Progress',
   InReview: 'In Review',
   Completed: 'Completed',
-  Closed: 'Closed',
-  Close: 'Closed',
+  Closed: 'Completed',
+  Close: 'Completed',
   Rejected: 'Rejected',
   Reject: 'Rejected',
   OnHold: 'On Hold',
@@ -35,7 +35,7 @@ export const TicketStatusLabel: Record<string | number, string> = {
   2: 'In Progress',
   3: 'In Review',
   4: 'Completed',
-  5: 'Closed',
+  5: 'Completed',
   6: 'Rejected',
   7: 'On Hold',
 }

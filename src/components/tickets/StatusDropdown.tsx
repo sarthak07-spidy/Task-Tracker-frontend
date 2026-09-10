@@ -6,24 +6,23 @@ interface StatusDropdownProps {
   currentStatus: string | number
   onStatusChange: (status: string) => void
   disabled?: boolean
-  canComplete?: boolean
   isInReview?: boolean
-  onOpenCompleteModal?: () => void
   onOpenRejectModal?: () => void
   isAssigned?: boolean
   isAssigner?: boolean
+  // canReject: passed from parent — true only if ticket was NEVER status-changed before (history is empty)
+  canReject?: boolean
 }
 
 export default function StatusDropdown({
   currentStatus,
   onStatusChange,
   disabled = false,
-  canComplete = false,
   isInReview = false,
-  onOpenCompleteModal,
   onOpenRejectModal,
   isAssigned = false,
   isAssigner = false,
+  canReject = false,
 }: StatusDropdownProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -39,7 +38,11 @@ export default function StatusDropdown({
   }, [])
 
   const statusKey = String(currentStatus ?? 'Open')
-  const displayLabel = statusMapping[statusKey] ?? statusKey
+  const isClosedStatus =
+    statusKey.toLowerCase() === 'closed' ||
+    statusKey.toLowerCase() === 'close' ||
+    statusKey === '5'
+  const displayLabel = isClosedStatus ? 'Completed' : (statusMapping[statusKey] ?? statusKey)
 
   return (
     <div ref={ref} className="relative">
@@ -61,36 +64,22 @@ export default function StatusDropdown({
       </button>
 
       {open && (
-        <div className="absolute left-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-line bg-ink-soft shadow-xl shadow-ink/60">
+        <div className="absolute left-0 top-full z-30 mt-1 w-48 overflow-hidden rounded-xl border border-line bg-ink-soft shadow-xl shadow-ink/60">
           {Object.entries(statusMapping).map(([key, label]) => {
             const isActive = key.toLowerCase() === statusKey.toLowerCase()
             const isCompleted = key.toLowerCase() === 'completed'
             const isClosed = key.toLowerCase() === 'closed' || key.toLowerCase() === 'close'
             const isRejected = key.toLowerCase() === 'rejected' || key.toLowerCase() === 'reject'
 
-            // Rule 1: Close option usee nahi dikhega jisko assign hui hai (assignee)
-            if (isClosed && isAssigned && !isAssigner) {
-              return null
-            }
+            // Hide raw Closed option — 'Completed' key is shown instead
+            if (isClosed) return null
 
-            // Rule 2: Reject option usee nahi dikhega jisne assign kari hai (assigner/creator)
-            // Aur reject sirf assignee ko dikhega, aur tabhi tak dikhega jab tak status Open ho
-            if (isRejected) {
-              if (isAssigner || !isAssigned) {
-                return null
-              }
-              const currentStatusStr = String(currentStatus).toLowerCase().trim()
-              const isCurrentlyOpen =
-                currentStatusStr === 'open' || currentStatusStr === '1' || currentStatus === 1
-              if (!isCurrentlyOpen && !isActive) {
-                return null
-              }
-            }
+            // Rejected: hide from assigner/creator
+            if (isRejected && isAssigner) return null
 
-            // Only show Completed option if it is already Completed OR (ticket is InReview and user canComplete)
-            if (isCompleted && !isActive && !canComplete) {
-              return null
-            }
+            // Rejected: only show if ticket was NEVER changed (canReject = true from parent)
+            // Once any status change happened → permanently hidden
+            if (isRejected && !canReject) return null
 
             return (
               <button
@@ -99,24 +88,31 @@ export default function StatusDropdown({
                 onClick={() => {
                   if (isRejected && onOpenRejectModal) {
                     onOpenRejectModal()
-                  } else if (isCompleted && canComplete && onOpenCompleteModal) {
-                    onOpenCompleteModal()
                   } else {
+                    // Completed goes through onStatusChange → handleStatusChange
+                    // which shows a toast telling user to use the Complete button when InReview
                     onStatusChange(key)
                   }
                   setOpen(false)
                 }}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors cursor-pointer ${
+                className={`flex w-full items-center justify-between gap-2 px-3 py-2.5 text-sm transition-colors cursor-pointer ${
                   isActive
                     ? 'bg-line font-semibold text-paper'
                     : 'text-paper-muted hover:bg-line hover:text-paper'
                 }`}
               >
-                <span
-                  className="size-2 rounded-full"
-                  style={{ backgroundColor: TicketStatusColor[key] ?? '#f59e0b' }}
-                />
-                {label}
+                <span className="flex items-center gap-2">
+                  <span
+                    className="size-2 rounded-full"
+                    style={{ backgroundColor: TicketStatusColor[key] ?? '#f59e0b' }}
+                  />
+                  {label}
+                </span>
+                {isCompleted && (
+                  <span className="text-[10px] font-semibold text-paper-muted/60 rounded-full border border-line px-1.5 py-0.5">
+                    {isInReview && isAssigner ? '← button' : 'InReview first'}
+                  </span>
+                )}
               </button>
             )
           })}

@@ -181,10 +181,12 @@ export interface TicketFilters {
 export interface Comment {
   id: number
   ticketId?: number
-  content: string
-  userId: number
+  content?: string
+  message?: string
+  commentType?: string
+  userId?: number
   userName: string
-  userEmail: string
+  userEmail?: string
   createdAt: string
   likes?: number
   parentCommentId?: number | null
@@ -199,7 +201,8 @@ export interface CommentThread {
 }
 
 export interface AddCommentPayload {
-  content: string
+  message?: string
+  content?: string
   parentCommentId?: number | null
 }
 
