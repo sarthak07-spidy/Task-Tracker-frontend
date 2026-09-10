@@ -118,6 +118,15 @@ export interface Ticket {
   completedAt?: string | null
   approvalStatus?: string
   approvalRemark?: string | null
+  rejectionReason?: string | null
+  history?: Array<{
+    id?: number
+    action?: string
+    performedByUserId?: number
+    performedByName?: string
+    performedAt?: string
+    comment?: string
+  }> | null
   projectId?: number | null
 }
 

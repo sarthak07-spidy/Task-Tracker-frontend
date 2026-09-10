@@ -49,8 +49,8 @@ export default function Tickets() {
   const [projects, setProjects] = useState<Project[]>([])
   const [tickets, setTickets] = useState<Ticket[]>([])
   const [ticketScope, setTicketScope] = useState<
-    'all' | 'assigned_to_me' | 'raised_by_me' | 'completed' | 'rejected'
-  >('all')
+    'active' | 'assigned_to_me' | 'raised_by_me' | 'completed' | 'rejected'
+  >('active')
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -123,10 +123,13 @@ export default function Tickets() {
       if (filters.assignedToUserId)
         params.assignedToUserId = filters.assignedToUserId
 
-      // Concurrently query main tickets, completed tickets, and rejected tickets
+      // Concurrently query:
+      // 1. Active: GET /api/tickets
+      // 2. Completed: GET /api/tickets/completed
+      // 3. Rejected: GET /api/tickets/rejected
       const [mainRes, completedRes, rejectedRes] = await Promise.allSettled([
         api.get('/tickets', { params }),
-        api.get('/Tickets/completed', {
+        api.get('/tickets/completed', {
           params: {
             projectId: selectedProjectId,
             ...(filters.priority ? { Priority: filters.priority } : {}),
@@ -134,7 +137,7 @@ export default function Tickets() {
             ...(filters.assignedToUserId ? { AssignedToUserId: filters.assignedToUserId } : {}),
           },
         }),
-        api.get('/Tickets/rejected', {
+        api.get('/tickets/rejected', {
           params: {
             projectId: selectedProjectId,
           },
@@ -174,7 +177,7 @@ export default function Tickets() {
           ticketMap.set(t.id, {
             ...prev,
             ...t,
-            status: t.status || (prev?.status ?? 'Completed'),
+            status: t.status || (prev?.status ?? 'Closed'),
           })
         }
       })
@@ -239,6 +242,15 @@ export default function Tickets() {
     [projects, selectedProjectId],
   )
 
+  const isClosedTicket = (t: Ticket) => {
+    const s = String(t.status ?? '').toLowerCase().trim()
+    return s === 'closed' || s === 'close' || s === '5' || t.status === 5
+  }
+
+  const activeCount = useMemo(() => {
+    return tickets.filter((t) => !isClosedTicket(t) && !isTicketRejected(t)).length
+  }, [tickets])
+
   const assignedToMeCount = useMemo(() => {
     if (!user) return 0
     return tickets.filter((t) => t.assignedToUserId === user.userId).length
@@ -265,8 +277,12 @@ export default function Tickets() {
         return false
       }
 
-      // 1. Scope filter (All / Assigned to Me / Raised by Me / Completed / Rejected)
-      if (ticketScope === 'assigned_to_me') {
+      // 1. Scope filter (All Active / Assigned to Me / Raised by Me / Completed / Rejected)
+      if (ticketScope === 'active' || (ticketScope as string) === 'all') {
+        if (isClosedTicket(t) || isTicketRejected(t)) {
+          return false
+        }
+      } else if (ticketScope === 'assigned_to_me') {
         if (!user || t.assignedToUserId !== user.userId) {
           return false
         }
@@ -455,24 +471,30 @@ export default function Tickets() {
 
           {/* Search & Filters */}
           <div className="flex flex-col gap-3 rounded-2xl border border-line bg-ink-soft p-4">
-            {/* 5-Way Scope Toggle: All / Assigned to Me / Raised by Me / Completed / Rejected */}
+            {/* 5-Way Scope Toggle: All Active / Assigned to Me / Raised by Me / Completed / Rejected */}
             <div className="flex flex-wrap items-center gap-2 border-b border-line pb-3">
               <button
                 type="button"
-                onClick={() => setTicketScope('all')}
+                onClick={() => {
+                  setTicketScope('active')
+                  setFilters((f) => ({ ...f, pageNumber: 1 }))
+                }}
                 className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
-                  ticketScope === 'all'
+                  ticketScope === 'active'
                     ? 'bg-brand text-paper shadow-md shadow-brand/20'
                     : 'border border-line bg-ink text-paper-muted hover:text-paper hover:border-paper/20'
                 }`}
               >
                 <TicketIcon className="size-3.5" />
-                All Tickets ({tickets.length})
+                All Active Tickets ({activeCount})
               </button>
 
               <button
                 type="button"
-                onClick={() => setTicketScope('assigned_to_me')}
+                onClick={() => {
+                  setTicketScope('assigned_to_me')
+                  setFilters((f) => ({ ...f, pageNumber: 1 }))
+                }}
                 className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
                   ticketScope === 'assigned_to_me'
                     ? 'bg-brand text-paper shadow-md shadow-brand/20'
@@ -485,7 +507,10 @@ export default function Tickets() {
 
               <button
                 type="button"
-                onClick={() => setTicketScope('raised_by_me')}
+                onClick={() => {
+                  setTicketScope('raised_by_me')
+                  setFilters((f) => ({ ...f, pageNumber: 1 }))
+                }}
                 className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
                   ticketScope === 'raised_by_me'
                     ? 'bg-brand text-paper shadow-md shadow-brand/20'
@@ -498,7 +523,10 @@ export default function Tickets() {
 
               <button
                 type="button"
-                onClick={() => setTicketScope('completed')}
+                onClick={() => {
+                  setTicketScope('completed')
+                  setFilters((f) => ({ ...f, pageNumber: 1 }))
+                }}
                 className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
                   ticketScope === 'completed'
                     ? 'bg-emerald-600 text-paper shadow-md shadow-emerald-950/40'
@@ -511,7 +539,10 @@ export default function Tickets() {
 
               <button
                 type="button"
-                onClick={() => setTicketScope('rejected')}
+                onClick={() => {
+                  setTicketScope('rejected')
+                  setFilters((f) => ({ ...f, pageNumber: 1 }))
+                }}
                 className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
                   ticketScope === 'rejected'
                     ? 'bg-red-600 text-paper shadow-md shadow-red-950/40'
@@ -609,25 +640,30 @@ export default function Tickets() {
               transition={{ delay: 0.15 }}
               className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"
             >
-              {displayedTickets.map((ticket, i) => (
-                <motion.div
-                  key={ticket.id}
-                  initial={{ opacity: 0, y: 20 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  transition={{ duration: 0.3, delay: i * 0.04, ease }}
-                >
-                  <TicketCard ticket={ticket} />
-                </motion.div>
-              ))}
+              {displayedTickets
+                .slice(
+                  ((filters.pageNumber ?? 1) - 1) * (filters.pageSize ?? 10),
+                  (filters.pageNumber ?? 1) * (filters.pageSize ?? 10)
+                )
+                .map((ticket, i) => (
+                  <motion.div
+                    key={ticket.id}
+                    initial={{ opacity: 0, y: 20 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3, delay: i * 0.04, ease }}
+                  >
+                    <TicketCard ticket={ticket} />
+                  </motion.div>
+                ))}
             </motion.div>
           )}
 
           {/* Pagination */}
-          {totalCount > 0 && (
+          {displayedTickets.length > 0 && (
             <Pagination
               page={filters.pageNumber ?? 1}
               pageSize={filters.pageSize ?? 10}
-              total={totalCount}
+              total={displayedTickets.length}
               onPageChange={(p) => setFilters((f) => ({ ...f, pageNumber: p }))}
               onPageSizeChange={(s) =>
                 setFilters((f) => ({ ...f, pageSize: s, pageNumber: 1 }))

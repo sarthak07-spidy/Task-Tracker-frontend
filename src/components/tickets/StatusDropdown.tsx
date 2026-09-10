@@ -9,6 +9,9 @@ interface StatusDropdownProps {
   canComplete?: boolean
   isInReview?: boolean
   onOpenCompleteModal?: () => void
+  onOpenRejectModal?: () => void
+  isAssigned?: boolean
+  isAssigner?: boolean
 }
 
 export default function StatusDropdown({
@@ -18,6 +21,9 @@ export default function StatusDropdown({
   canComplete = false,
   isInReview = false,
   onOpenCompleteModal,
+  onOpenRejectModal,
+  isAssigned = false,
+  isAssigner = false,
 }: StatusDropdownProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -59,7 +65,28 @@ export default function StatusDropdown({
           {Object.entries(statusMapping).map(([key, label]) => {
             const isActive = key.toLowerCase() === statusKey.toLowerCase()
             const isCompleted = key.toLowerCase() === 'completed'
-            
+            const isClosed = key.toLowerCase() === 'closed' || key.toLowerCase() === 'close'
+            const isRejected = key.toLowerCase() === 'rejected' || key.toLowerCase() === 'reject'
+
+            // Rule 1: Close option usee nahi dikhega jisko assign hui hai (assignee)
+            if (isClosed && isAssigned && !isAssigner) {
+              return null
+            }
+
+            // Rule 2: Reject option usee nahi dikhega jisne assign kari hai (assigner/creator)
+            // Aur reject sirf assignee ko dikhega, aur tabhi tak dikhega jab tak status Open ho
+            if (isRejected) {
+              if (isAssigner || !isAssigned) {
+                return null
+              }
+              const currentStatusStr = String(currentStatus).toLowerCase().trim()
+              const isCurrentlyOpen =
+                currentStatusStr === 'open' || currentStatusStr === '1' || currentStatus === 1
+              if (!isCurrentlyOpen && !isActive) {
+                return null
+              }
+            }
+
             // Only show Completed option if it is already Completed OR (ticket is InReview and user canComplete)
             if (isCompleted && !isActive && !canComplete) {
               return null
@@ -70,7 +97,9 @@ export default function StatusDropdown({
                 key={key}
                 type="button"
                 onClick={() => {
-                  if (isCompleted && canComplete && onOpenCompleteModal) {
+                  if (isRejected && onOpenRejectModal) {
+                    onOpenRejectModal()
+                  } else if (isCompleted && canComplete && onOpenCompleteModal) {
                     onOpenCompleteModal()
                   } else {
                     onStatusChange(key)

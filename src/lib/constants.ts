@@ -101,24 +101,18 @@ export function isTicketCompleted(ticketOrStatus: unknown): boolean {
   if (!ticketOrStatus) return false
   const statusVal =
     typeof ticketOrStatus === 'object' && ticketOrStatus !== null && 'status' in ticketOrStatus
-      ? (ticketOrStatus as { status?: unknown; completedAt?: unknown }).status
+      ? (ticketOrStatus as { status?: unknown }).status
       : ticketOrStatus
   const s = String(statusVal ?? '').toLowerCase().trim()
-  const isCompletedByDate =
-    typeof ticketOrStatus === 'object' &&
-    ticketOrStatus !== null &&
-    'completedAt' in ticketOrStatus &&
-    Boolean((ticketOrStatus as { completedAt?: unknown }).completedAt)
 
   return (
-    s === 'completed' ||
     s === 'closed' ||
     s === 'close' ||
-    s === '4' ||
+    s === 'completed' ||
     s === '5' ||
-    statusVal === 4 ||
+    s === '4' ||
     statusVal === 5 ||
-    isCompletedByDate
+    statusVal === 4
   )
 }
 

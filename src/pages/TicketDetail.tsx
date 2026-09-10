@@ -1,4 +1,4 @@
-import { useEffect, useState, useCallback } from 'react'
+import { useEffect, useState, useCallback, useMemo } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
 import { motion } from 'framer-motion'
 import {
@@ -270,17 +270,9 @@ export default function TicketDetail() {
         String(ticket.status) === '6')
   )
 
-  // Also treat Completed status as finalized (backend may return 'Completed' before changing to 'Closed')
-  const isCompletedStatus = Boolean(
-    ticket &&
-      (ticket.status === 'Completed' ||
-        ticket.status === 4 ||
-        String(ticket.status).toLowerCase() === 'completed' ||
-        String(ticket.status) === '4')
-  )
-
-  // isFinalized = ticket cannot be edited, commented on, or have its status changed
-  const isFinalized = isClosed || isRejected || isCompletedStatus
+  // isFinalized = only Closed or Rejected tickets cannot be edited, commented on, or deleted.
+  // Tickets with status Completed can still be edited and have their status changed.
+  const isFinalized = isClosed || isRejected
 
   const isManager =
     user?.role === 'Manager' ||
@@ -292,29 +284,141 @@ export default function TicketDetail() {
   const canMarkForReview = !isFinalized && (isAssigned || isManager)
   const canApprove = isManager && isInReview
 
+  // Completion review details (from approvalRemark, ticket history, or comments thread)
+  const completionReview = useMemo(() => {
+    if (!ticket) return null
+
+    // 1. Direct fields on ticket
+    const direct =
+      ticket.approvalRemark ||
+      (ticket as { ApprovalRemark?: string }).ApprovalRemark ||
+      (ticket as { completionRemark?: string }).completionRemark
+
+    if (direct && typeof direct === 'string' && direct.trim()) {
+      return {
+        text: direct.trim(),
+        by: ticket.createdByName || 'Assigner',
+        at: ticket.completedAt || ticket.updatedAt,
+      }
+    }
+
+    // 2. Ticket history (TicketHistoryResponse from backend)
+    if (ticket.history && Array.isArray(ticket.history)) {
+      const hMatch = ticket.history.slice().reverse().find(
+        (h) =>
+          (h.action?.toLowerCase().includes('complet') ||
+            h.action?.toLowerCase().includes('approv') ||
+            h.action?.toLowerCase().includes('close')) &&
+          h.comment &&
+          h.comment.trim()
+      )
+      if (hMatch && hMatch.comment) {
+        return {
+          text: hMatch.comment.trim(),
+          by: hMatch.performedByName || ticket.createdByName || 'Assigner',
+          at: hMatch.performedAt || ticket.completedAt || ticket.updatedAt,
+        }
+      }
+    }
+
+    // 3. Comments thread (Completion Review comment)
+    if (comments?.comments && Array.isArray(comments.comments)) {
+      const cMatch = comments.comments.slice().reverse().find(
+        (c) =>
+          c.content?.includes('Completion Review') ||
+          c.content?.includes('Review') ||
+          c.content?.startsWith('📋')
+      )
+      if (cMatch?.content) {
+        const clean = cMatch.content.replace(/^[📋\s]*\**Completion Review\**:\s*/i, '').trim()
+        if (clean) {
+          return {
+            text: clean,
+            by: cMatch.userName || ticket.createdByName || 'Assigner',
+            at: cMatch.createdAt,
+          }
+        }
+      }
+    }
+
+    return null
+  }, [ticket, comments])
+
+  // Rejection reason details (if rejected)
+  const rejectionDetail = useMemo(() => {
+    if (!ticket || !isRejected) return null
+    const direct =
+      ticket.rejectionReason ||
+      (ticket as { RejectionReason?: string }).RejectionReason
+    if (direct && typeof direct === 'string' && direct.trim()) {
+      return {
+        text: direct.trim(),
+        by: ticket.assignedToName || 'Assignee',
+      }
+    }
+    if (comments?.comments && Array.isArray(comments.comments)) {
+      const cMatch = comments.comments.slice().reverse().find(
+        (c) =>
+          c.content?.includes('Assignment Rejected') ||
+          c.content?.includes('Changes Requested') ||
+          c.content?.startsWith('❌') ||
+          c.content?.startsWith('⚠️')
+      )
+      if (cMatch?.content) {
+        const clean = cMatch.content.replace(/^[❌⚠️\s]*\**[^*]+\**:\s*/i, '').trim()
+        if (clean) {
+          return {
+            text: clean,
+            by: cMatch.userName || ticket.assignedToName || 'Assignee',
+          }
+        }
+      }
+    }
+    return null
+  }, [ticket, isRejected, comments])
+
   const fetchTicket = useCallback(async (silent = false) => {
     if (!id) return
     if (!silent) setLoading(true)
     let loadedTicket: Ticket | null = null
 
     try {
+      // 1. Try active ticket: GET /api/tickets/{id}
       const { data } = await api.get(`/tickets/${id}`)
       const resData = (data?.success && data?.data) ? data.data : data
       if (resData && (resData.id !== undefined || resData.title)) {
         loadedTicket = resData as Ticket
       }
     } catch {
-      // Resilient fallback: look up ticket by ID from /tickets list
+      // 2. Try completed ticket: GET /api/tickets/completed/{id}
       try {
-        const { data } = await api.get('/tickets', { params: { pageSize: 100 } })
-        const list = (data?.success && data?.data) ? data.data : data
-        const arr: Ticket[] = Array.isArray(list) ? list : (list?.tickets ?? [])
-        const found = arr.find((t) => String(t.id) === String(id))
-        if (found) {
-          loadedTicket = found
+        const { data } = await api.get(`/tickets/completed/${id}`)
+        const resData = (data?.success && data?.data) ? data.data : data
+        if (resData && (resData.id !== undefined || resData.title)) {
+          loadedTicket = { ...(resData as Ticket), status: resData.status || 'Closed' }
         }
       } catch {
-        // ignore fallback error
+        // 3. Try rejected ticket: GET /api/tickets/rejected/{id}
+        try {
+          const { data } = await api.get(`/tickets/rejected/${id}`)
+          const resData = (data?.success && data?.data) ? data.data : data
+          if (resData && (resData.id !== undefined || resData.title)) {
+            loadedTicket = { ...(resData as Ticket), status: resData.status || 'Rejected' }
+          }
+        } catch {
+          // Fallback: look up ticket by ID from /tickets list
+          try {
+            const { data } = await api.get('/tickets', { params: { pageSize: 100 } })
+            const list = (data?.success && data?.data) ? data.data : data
+            const arr: Ticket[] = Array.isArray(list) ? list : (list?.tickets ?? [])
+            const found = arr.find((t) => String(t.id) === String(id))
+            if (found) {
+              loadedTicket = found
+            }
+          } catch {
+            // ignore fallback error
+          }
+        }
       }
     }
 
@@ -387,6 +491,37 @@ export default function TicketDetail() {
       return
     }
 
+    const isRejectedAttempt =
+      status === 'Rejected' ||
+      status === 'Reject' ||
+      status === '6' ||
+      String(status).toLowerCase() === 'rejected'
+
+    if (isRejectedAttempt) {
+      if (!isAssigned) {
+        toast('error', 'Only the assigned user can reject this ticket.')
+        return
+      }
+      if (!isOpen) {
+        toast('error', 'Ticket assignment can only be rejected while status is Open.')
+        return
+      }
+      setRejectReason('')
+      setRejectModalOpen(true)
+      return
+    }
+
+    const isClosedAttempt =
+      status === 'Closed' ||
+      status === 'Close' ||
+      status === '5' ||
+      String(status).toLowerCase() === 'closed'
+
+    if (isClosedAttempt && isAssigned && !isAssigner) {
+      toast('error', 'Assignee cannot close this ticket.')
+      return
+    }
+
     setStatusLoading(true)
     try {
       try {
@@ -426,7 +561,6 @@ export default function TicketDetail() {
       try {
         await api.put(`/Tickets/${id}/completed`, {
           ApprovalRemark: review,
-          approvalRemark: review,
         })
       } catch (e: unknown) {
         const status = (e as { response?: { status?: number } })?.response?.status
@@ -434,12 +568,10 @@ export default function TicketDetail() {
           try {
             await api.put(`/tickets/${id}/completed`, {
               ApprovalRemark: review,
-              approvalRemark: review,
             })
           } catch {
             try {
-              await api.put(`/tickets/${id}/approve-completion`, {
-                approvalRemark: review,
+              await api.put(`/tickets/${id}/complete`, {
                 ApprovalRemark: review,
               })
             } catch {
@@ -490,25 +622,25 @@ export default function TicketDetail() {
 
     setRejectLoading(true)
     try {
+      // Primary: PUT /api/tickets/{id}/reject with RejectionReason
       try {
-        await api.put(`/Tickets/${id}/rejected`, {
+        await api.put(`/tickets/${id}/reject`, {
           RejectionReason: reason,
-          rejectionReason: reason,
-          reason,
         })
-      } catch {
-        try {
-          await api.put(`/Tickets/${id}/reject`, {
-            RejectionReason: reason,
-            rejectionReason: reason,
-            reason,
-          })
-        } catch {
+      } catch (e: unknown) {
+        const status = (e as { response?: { status?: number } })?.response?.status
+        if (status === 404 || status === 405) {
           try {
-            await api.put(`/Tickets/${id}/status`, { status: 'Rejected', rejectionReason: reason })
+            await api.put(`/Tickets/${id}/reject`, {
+              RejectionReason: reason,
+            })
           } catch {
-            await api.put(`/tickets/${id}/status`, { status: 'Rejected', rejectionReason: reason })
+            await api.put(`/tickets/${id}/rejected`, {
+              RejectionReason: reason,
+            })
           }
+        } else {
+          throw e
         }
       }
 
@@ -781,9 +913,15 @@ export default function TicketDetail() {
                       disabled={statusLoading}
                       canComplete={canComplete}
                       isInReview={isInReview}
+                      isAssigned={isAssigned}
+                      isAssigner={isAssigner}
                       onOpenCompleteModal={() => {
                         setReviewComment('')
                         setCompleteModalOpen(true)
+                      }}
+                      onOpenRejectModal={() => {
+                        setRejectReason('')
+                        setRejectModalOpen(true)
                       }}
                     />
                     <button
@@ -811,32 +949,7 @@ export default function TicketDetail() {
                     <span>Complete</span>
                   </button>
                 )}
-                {/* Reject Assignment Button: ONLY visible to Assignee while status is Open */}
-                {canRejectAssignment && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setRejectReason('')
-                      setRejectModalOpen(true)
-                    }}
-                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/10 px-3.5 py-2.5 text-xs font-semibold text-red-400 shadow-sm transition-all hover:bg-red-500/20 active:scale-95 cursor-pointer"
-                    title="Reject assignment (available only while Open)"
-                  >
-                    <XCircle className="size-4 text-red-400" />
-                    <span>Reject</span>
-                  </button>
-                )}
-                {canMarkForReview && isInProgress && (
-                  <button
-                    type="button"
-                    onClick={handleMarkForReview}
-                    className="inline-flex items-center gap-1.5 rounded-xl bg-purple-500/15 px-3 py-2.5 text-xs font-semibold text-purple-400 transition-colors hover:bg-purple-500/25 cursor-pointer"
-                    title="Send ticket for review"
-                  >
-                    <Send className="size-4" />
-                    <span>Mark for Review</span>
-                  </button>
-                )}
+
                 {canDelete && (
                   <button
                     type="button"
@@ -852,7 +965,7 @@ export default function TicketDetail() {
 
             {/* Finalized read-only banner — shown when ticket is Completed or Rejected */}
             {isFinalized && (
-              <div className="mt-6 border-t border-line pt-5">
+              <div className="mt-6 border-t border-line pt-5 flex flex-col gap-4">
                 <div
                   className={`flex items-start gap-3 rounded-2xl border p-4 ${
                     isRejected
@@ -869,7 +982,7 @@ export default function TicketDetail() {
                   >
                     <Lock className="size-4" />
                   </div>
-                  <div>
+                  <div className="flex-1 min-w-0">
                     <p
                       className={`text-sm font-bold ${
                         isRejected ? 'text-red-400' : 'text-emerald-400'
@@ -884,6 +997,55 @@ export default function TicketDetail() {
                     </p>
                   </div>
                 </div>
+
+                {/* Prominent Completion Review Card */}
+                {!isRejected && completionReview && (
+                  <div className="rounded-2xl border border-emerald-500/30 bg-emerald-950/20 p-4 sm:p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-emerald-500/20 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex size-6 items-center justify-center rounded-lg bg-emerald-500/20 text-emerald-400">
+                          <CheckCircle2 className="size-3.5" />
+                        </div>
+                        <span className="text-xs font-bold uppercase tracking-wider text-emerald-400">
+                          Completion Review
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-paper-muted">
+                        Reviewed by <span className="font-semibold text-paper">{completionReview.by}</span>
+                        {completionReview.at && ` • ${new Date(completionReview.at).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`}
+                      </span>
+                    </div>
+                    <div className="mt-3">
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-paper italic">
+                        "{completionReview.text}"
+                      </p>
+                    </div>
+                  </div>
+                )}
+
+                {/* Prominent Rejection Reason Card */}
+                {isRejected && rejectionDetail && (
+                  <div className="rounded-2xl border border-red-500/30 bg-red-950/20 p-4 sm:p-5">
+                    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-red-500/20 pb-3">
+                      <div className="flex items-center gap-2">
+                        <div className="flex size-6 items-center justify-center rounded-lg bg-red-500/20 text-red-400">
+                          <XCircle className="size-3.5" />
+                        </div>
+                        <span className="text-xs font-bold uppercase tracking-wider text-red-400">
+                          Reason for Rejection
+                        </span>
+                      </div>
+                      <span className="text-[11px] text-paper-muted">
+                        Rejected by <span className="font-semibold text-paper">{rejectionDetail.by}</span>
+                      </span>
+                    </div>
+                    <div className="mt-3">
+                      <p className="whitespace-pre-wrap text-sm leading-relaxed text-paper italic">
+                        "{rejectionDetail.text}"
+                      </p>
+                    </div>
+                  </div>
+                )}
               </div>
             )}
 
@@ -1260,7 +1422,21 @@ export default function TicketDetail() {
                 className="rounded-xl border border-line bg-ink/60 px-3 py-3 text-sm text-paper outline-none focus:border-brand"
               >
                 {Object.entries(statusMapping).map(([val, label]) => {
-                  if (val.toLowerCase() === 'completed' && String(ticket?.status).toLowerCase() !== 'completed') {
+                  const isCompleted = val.toLowerCase() === 'completed'
+                  const isClosed = val.toLowerCase() === 'closed' || val.toLowerCase() === 'close'
+                  const isRejected = val.toLowerCase() === 'rejected' || val.toLowerCase() === 'reject'
+
+                  // Rule 1: Close option usee nahi dikhega jisko assign hui hai
+                  if (isClosed && isAssigned && !isAssigner) {
+                    return null
+                  }
+
+                  // Rule 2: Reject option usee nahi dikhega jisne assign kari hai
+                  if (isRejected && isAssigner) {
+                    return null
+                  }
+
+                  if (isCompleted && String(ticket?.status).toLowerCase() !== 'completed') {
                     return null
                   }
                   return (
