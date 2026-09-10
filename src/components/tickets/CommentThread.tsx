@@ -31,10 +31,15 @@ function CommentItem({
           .slice(0, 2) ?? <UserCircle className="size-4" />}
       </div>
       <div className="flex-1 min-w-0">
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 flex-wrap">
           <span className="text-sm font-semibold text-paper">
             {comment.userName}
           </span>
+          {comment.userEmail && (
+            <span className="text-[11px] font-mono text-paper-muted/80">
+              ({comment.userEmail})
+            </span>
+          )}
           <span className="text-[11px] text-paper-muted">
             {new Date(comment.createdAt).toLocaleDateString('en-US', {
               month: 'short',

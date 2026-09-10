@@ -1,10 +1,19 @@
 import { motion } from 'framer-motion'
-import { Link } from 'react-router-dom'
+import { Link, useSearchParams } from 'react-router-dom'
 import { ArrowLeft } from 'lucide-react'
 import AuthCard from '../components/AuthCard'
 import Logo from '../components/Logo'
 
-export default function Auth() {
+export default function Auth({
+  initialMode,
+}: {
+  initialMode?: 'login' | 'signup' | 'forgot'
+}) {
+  const [searchParams] = useSearchParams()
+  const modeParam = searchParams.get('mode') as 'login' | 'signup' | 'forgot' | null
+  const effectiveMode =
+    initialMode ||
+    (modeParam === 'forgot' || modeParam === 'signup' ? modeParam : 'login')
   return (
     <main className="relative flex min-h-screen flex-col overflow-hidden px-6 py-6">
       <div aria-hidden="true" className="absolute inset-0 grid-fade" />
@@ -36,7 +45,7 @@ export default function Auth() {
         style={{ perspective: 1400 }}
         className="relative z-10 flex flex-1 items-center justify-center py-12"
       >
-        <AuthCard initialMode="login" />
+        <AuthCard key={effectiveMode} initialMode={effectiveMode} />
       </motion.div>
     </main>
   )

@@ -10,14 +10,16 @@ import {
   Briefcase,
   Building2,
   AlertCircle,
+  KeyRound,
 } from 'lucide-react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import TiltCard from './TiltCard'
 import { LogoMark } from './Logo'
 import { useAuth } from '../context/AuthContext'
 import Spinner from './ui/Spinner'
+import ForgotPasswordCard from './ForgotPasswordCard'
 
-type Mode = 'login' | 'signup'
+type Mode = 'login' | 'signup' | 'forgot'
 const ease = [0.22, 1, 0.36, 1] as const
 
 function Field({
@@ -188,13 +190,30 @@ export default function AuthCard({
             </div>
           </div>
           <div className="relative">
-            <p className="font-display text-4xl font-bold leading-[1.05] tracking-tight text-balance">
-              Your week, seen clearly for the first time.
-            </p>
-            <p className="mt-4 max-w-sm text-sm leading-relaxed text-paper/80">
-              Join teams who stopped guessing and started tracking. No credit
-              card, no setup call — just a timer that finally keeps up.
-            </p>
+            {mode === 'forgot' ? (
+              <>
+                <span className="inline-flex items-center gap-1.5 rounded-full border border-paper/20 bg-ink/20 px-3 py-1 text-xs font-semibold uppercase tracking-wider text-paper/90 backdrop-blur-md">
+                  <KeyRound className="size-3 text-amber" />
+                  Account Recovery
+                </span>
+                <p className="mt-4 font-display text-4xl font-bold leading-[1.08] tracking-tight text-balance">
+                  Regain access to your workspace securely.
+                </p>
+                <p className="mt-4 max-w-sm text-sm leading-relaxed text-paper/80">
+                  Reset your credentials safely so you can resume tracking time, tickets, and team velocity without missing a beat.
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="font-display text-4xl font-bold leading-[1.05] tracking-tight text-balance">
+                  Your week, seen clearly for the first time.
+                </p>
+                <p className="mt-4 max-w-sm text-sm leading-relaxed text-paper/80">
+                  Join teams who stopped guessing and started tracking. No credit
+                  card, no setup call — just a timer that finally keeps up.
+                </p>
+              </>
+            )}
           </div>
           <p className="relative text-xs text-paper/60">
             © {new Date().getFullYear()} YenDigital. All rights reserved.
@@ -202,12 +221,20 @@ export default function AuthCard({
         </div>
 
         {/* Right form panel */}
-        <div className="p-7 sm:p-10">
-          <div
-            role="tablist"
-            aria-label="Authentication mode"
-            className="relative grid grid-cols-2 rounded-full bg-ink/60 p-1"
-          >
+        <div className="p-7 sm:p-10 flex flex-col justify-center">
+          {mode === 'forgot' ? (
+            <ForgotPasswordCard
+              compact
+              initialEmail={email}
+              onBackToLogin={() => switchMode('login')}
+            />
+          ) : (
+            <>
+              <div
+                role="tablist"
+                aria-label="Authentication mode"
+                className="relative grid grid-cols-2 rounded-full bg-ink/60 p-1"
+              >
             <motion.span
               aria-hidden="true"
               layout
@@ -379,12 +406,13 @@ export default function AuthCard({
                     />
                     Remember me
                   </label>
-                  <a
-                    href="#"
-                    className="font-medium text-paper-muted hover:text-brand"
+                  <button
+                    type="button"
+                    onClick={() => switchMode('forgot')}
+                    className="font-medium text-paper-muted hover:text-brand transition-colors cursor-pointer"
                   >
                     Forgot password?
-                  </a>
+                  </button>
                 </div>
               ) : (
                 <label className="flex items-start gap-2 text-xs text-paper-muted">
@@ -418,7 +446,7 @@ export default function AuthCard({
                 disabled={loading}
                 whileHover={{ scale: loading ? 1 : 1.02 }}
                 whileTap={{ scale: loading ? 1 : 0.97 }}
-                className="group mt-1 inline-flex items-center justify-center gap-2 rounded-xl bg-brand py-3.5 text-sm font-semibold text-paper shadow-[0_12px_40px_-12px_rgba(228,55,28,0.9)] disabled:opacity-70"
+                className="group mt-1 inline-flex items-center justify-center gap-2 rounded-xl bg-brand py-3.5 text-sm font-semibold text-paper shadow-[0_12px_40px_-12px_rgba(228,55,28,0.9)] disabled:opacity-70 cursor-pointer"
               >
                 {loading ? (
                   <Spinner size="sm" />
@@ -439,13 +467,15 @@ export default function AuthCard({
                   onClick={() =>
                     switchMode(mode === 'login' ? 'signup' : 'login')
                   }
-                  className="font-semibold text-paper underline-offset-4 hover:underline"
+                  className="font-semibold text-paper underline-offset-4 hover:underline cursor-pointer"
                 >
                   {mode === 'login' ? 'Create an account' : 'Log in'}
                 </button>
               </p>
             </motion.form>
           </AnimatePresence>
+            </>
+          )}
         </div>
       </div>
     </TiltCard>

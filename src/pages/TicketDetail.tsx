@@ -14,6 +14,7 @@ import {
   CheckCircle2,
   AlertCircle,
   FolderKanban,
+  Mail,
 } from 'lucide-react'
 import api from '../lib/api'
 import { useAuth } from '../context/AuthContext'
@@ -37,7 +38,7 @@ import {
   CategoryColor,
 } from '../lib/constants'
 import Badge from '../components/ui/Badge'
-import { PageLoader } from '../components/ui/Spinner'
+import Spinner, { PageLoader } from '../components/ui/Spinner'
 import StatusDropdown from '../components/tickets/StatusDropdown'
 import TimeLogger from '../components/tickets/TimeLogger'
 import CommentThread from '../components/tickets/CommentThread'
@@ -61,6 +62,11 @@ export default function TicketDetail() {
   const [editOpen, setEditOpen] = useState(false)
   const [statusLoading, setStatusLoading] = useState(false)
 
+  // Complete ticket with review modal state
+  const [completeModalOpen, setCompleteModalOpen] = useState(false)
+  const [reviewComment, setReviewComment] = useState('')
+  const [completeLoading, setCompleteLoading] = useState(false)
+
   // Edit form state — all API-supported fields
   const [editTitle, setEditTitle] = useState('')
   const [editDesc, setEditDesc] = useState('')
@@ -74,16 +80,162 @@ export default function TicketDetail() {
   const [editTags, setEditTags] = useState('')
   const [editLoading, setEditLoading] = useState(false)
 
-  const isCreator = ticket && user && ticket.createdByUserId === user.userId
-  const isAssigned = ticket && user && ticket.assignedToUserId === user.userId
+  // Directory map to look up emails by userId and name
+  const [userEmailMap, setUserEmailMap] = useState<Map<string | number, string>>(new Map())
+
+  useEffect(() => {
+    async function loadDirectory() {
+      try {
+        let empList: Array<Record<string, unknown>> = []
+        try {
+          const res = await api.get('/Users/employees')
+          const d = res.data?.success ? res.data.data : res.data
+          if (Array.isArray(d)) empList = d
+        } catch {
+          try {
+            const res2 = await api.get('/SuperAdmin/users')
+            const d2 = res2.data?.success ? res2.data.data : res2.data
+            if (Array.isArray(d2)) empList = d2
+          } catch {}
+        }
+
+        const map = new Map<string | number, string>()
+        empList.forEach((e) => {
+          const email = ((e.email as string) || (e.Email as string) || '').trim()
+          if (!email) return
+          const uid = Number(e.id ?? e.userId ?? e.Id ?? e.UserId)
+          if (!isNaN(uid) && uid > 0) {
+            map.set(uid, email)
+            map.set(String(uid), email)
+          }
+          const fullName = (
+            (e.fullName as string) ||
+            `${(e.firstName as string) ?? ''} ${(e.lastName as string) ?? ''}`
+          ).trim().toLowerCase()
+          if (fullName) {
+            map.set(fullName, email)
+          }
+        })
+        setUserEmailMap(map)
+      } catch {
+        // ignore directory load failure
+      }
+    }
+    loadDirectory()
+  }, [])
+
+  function resolveEmail(
+    userId?: number | null,
+    name?: string | null,
+    directEmail?: string | null,
+  ): string | null {
+    if (directEmail && directEmail.includes('@')) {
+      return directEmail.trim()
+    }
+    if (userId != null && userEmailMap.has(userId)) {
+      return userEmailMap.get(userId) ?? null
+    }
+    if (userId != null && userEmailMap.has(String(userId))) {
+      return userEmailMap.get(String(userId)) ?? null
+    }
+    if (name && userEmailMap.has(name.trim().toLowerCase())) {
+      return userEmailMap.get(name.trim().toLowerCase()) ?? null
+    }
+    if (user && user.email) {
+      if (
+        (userId != null && Number(user.userId) === Number(userId)) ||
+        (name && `${user.firstName} ${user.lastName}`.trim().toLowerCase() === name.trim().toLowerCase())
+      ) {
+        return user.email
+      }
+    }
+    return null
+  }
+
+  const createdEmail = resolveEmail(
+    ticket?.createdByUserId,
+    ticket?.createdByName,
+    ticket?.createdByEmail,
+  )
+
+  const assignedEmail = resolveEmail(
+    ticket?.assignedToUserId,
+    ticket?.assignedToName,
+    ticket?.assignedToEmail,
+  )
+
+  const isCreator = Boolean(
+    ticket &&
+      user &&
+      (
+        (ticket.createdByUserId != null &&
+          Number(ticket.createdByUserId) > 0 &&
+          Number(user.userId) > 0 &&
+          Number(ticket.createdByUserId) === Number(user.userId)) ||
+        (createdEmail &&
+          user.email &&
+          createdEmail.toLowerCase().trim() === user.email.toLowerCase().trim())
+      )
+  )
+
+  const isAssigned = Boolean(
+    ticket &&
+      user &&
+      (
+        (ticket.assignedToUserId != null &&
+          Number(ticket.assignedToUserId) > 0 &&
+          Number(user.userId) > 0 &&
+          Number(ticket.assignedToUserId) === Number(user.userId)) ||
+        (assignedEmail &&
+          user.email &&
+          assignedEmail.toLowerCase().trim() === user.email.toLowerCase().trim())
+      )
+  )
+
+  // Only the person who assigned the ticket can complete it
+  const isAssigner = Boolean(
+    ticket &&
+      user &&
+      (
+        isCreator ||
+        (ticket.assignedByUserId != null &&
+          Number(ticket.assignedByUserId) > 0 &&
+          Number(user.userId) > 0 &&
+          Number(ticket.assignedByUserId) === Number(user.userId) &&
+          Number(ticket.assignedByUserId) !== Number(ticket.assignedToUserId))
+      )
+  )
+
+  // Ticket can ONLY be completed when status is "In Review"
+  const isInReview = Boolean(
+    ticket &&
+      (ticket.status === 'InReview' ||
+        ticket.status === 'In Review' ||
+        ticket.status === 3 ||
+        String(ticket.status).toLowerCase().replace(/\s+/g, '') === 'inreview' ||
+        String(ticket.status) === '3')
+  )
+
+  const isInProgress = Boolean(
+    ticket &&
+      (ticket.status === 'InProgress' ||
+        ticket.status === 'In Progress' ||
+        ticket.status === 2 ||
+        String(ticket.status).toLowerCase().replace(/\s+/g, '') === 'inprogress' ||
+        String(ticket.status) === '2')
+  )
+
+  // Complete button is strictly visible ONLY to the assigner, and ONLY when status is In Review
+  const canComplete = isInReview && isAssigner
+
   const isManager =
     user?.role === 'Manager' ||
     user?.role === 'SuperAdmin' ||
     user?.role === 'TeamLead'
   const canEdit = isCreator || isAssigned || isManager
-  const canDelete = isCreator || user?.role === 'SuperAdmin'
+  const canDelete = isCreator
   const canMarkForReview = isAssigned || isManager
-  const canApprove = isManager && ticket?.status === 3
+  const canApprove = isManager && isInReview
 
   const fetchTicket = useCallback(async () => {
     if (!id) return
@@ -157,6 +309,25 @@ export default function TicketDetail() {
   }, [fetchTicket])
 
   async function handleStatusChange(status: string) {
+    const isCompletedAttempt =
+      status === 'Completed' ||
+      status === '4' ||
+      String(status).toLowerCase() === 'completed'
+
+    if (isCompletedAttempt) {
+      if (!isInReview) {
+        toast('error', 'Ticket can only be completed when its status is In Review.')
+        return
+      }
+      if (!isAssigner) {
+        toast('error', 'Only the person who assigned this ticket can complete it.')
+        return
+      }
+      setReviewComment('')
+      setCompleteModalOpen(true)
+      return
+    }
+
     setStatusLoading(true)
     try {
       try {
@@ -179,6 +350,59 @@ export default function TicketDetail() {
       )
     } finally {
       setStatusLoading(false)
+    }
+  }
+
+  async function handleCompleteWithReview() {
+    if (!ticket) return
+    const review = reviewComment.trim()
+    if (!review) {
+      toast('error', 'Please enter your review before completing the ticket.')
+      return
+    }
+
+    setCompleteLoading(true)
+    try {
+      // 1. Try approve-completion endpoint with the review remark
+      try {
+        await api.put(`/tickets/${id}/approve-completion`, {
+          approvalRemark: review,
+        })
+      } catch (e: unknown) {
+        const status = (e as { response?: { status?: number } })?.response?.status
+        if (status === 404 || status === 405) {
+          // Fallback to direct status update to Completed
+          try {
+            await api.put(`/tickets/${id}/status`, { status: 'Completed' })
+          } catch {
+            await api.put(`/Tickets/${id}/status`, { status: 'Completed' })
+          }
+        } else {
+          throw e
+        }
+      }
+
+      // 2. Also post the review comment into thread for full visibility
+      try {
+        await api.post(`/tickets/${id}/comments`, {
+          content: `📋 **Completion Review**: ${review}`,
+        })
+      } catch {
+        // non-blocking
+      }
+
+      toast('success', 'Ticket completed successfully with review!')
+      setCompleteModalOpen(false)
+      setReviewComment('')
+      fetchTicket()
+    } catch (err: unknown) {
+      toast(
+        'error',
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? 'Failed to complete ticket',
+      )
+    } finally {
+      setCompleteLoading(false)
     }
   }
 
@@ -219,7 +443,46 @@ export default function TicketDetail() {
     }
   }
 
+  function handleDeleteClick() {
+    if (!ticket) return
+
+    const isOpenStatus =
+      ticket.status === 'Open' ||
+      ticket.status === 1 ||
+      String(ticket.status).toLowerCase() === 'open' ||
+      String(ticket.status) === '1'
+
+    if (!isOpenStatus) {
+      const currentLabel = TicketStatusLabel[ticket.status] || ticket.status
+      toast(
+        'error',
+        `Ticket cannot be deleted because its status is not Open (Current status: ${currentLabel}).`,
+      )
+      return
+    }
+
+    setDeleteOpen(true)
+  }
+
   async function handleDelete() {
+    if (!ticket) return
+
+    const isOpenStatus =
+      ticket.status === 'Open' ||
+      ticket.status === 1 ||
+      String(ticket.status).toLowerCase() === 'open' ||
+      String(ticket.status) === '1'
+
+    if (!isOpenStatus) {
+      const currentLabel = TicketStatusLabel[ticket.status] || ticket.status
+      toast(
+        'error',
+        `Ticket cannot be deleted because its status is not Open (Current status: ${currentLabel}).`,
+      )
+      setDeleteOpen(false)
+      return
+    }
+
     setDeleteLoading(true)
     try {
       await api.delete(`/tickets/${id}`)
@@ -388,31 +651,54 @@ export default function TicketDetail() {
                       currentStatus={ticket.status}
                       onStatusChange={handleStatusChange}
                       disabled={statusLoading}
+                      canComplete={canComplete}
+                      isInReview={isInReview}
+                      onOpenCompleteModal={() => {
+                        setReviewComment('')
+                        setCompleteModalOpen(true)
+                      }}
                     />
                     <button
                       type="button"
                       onClick={openEdit}
-                      className="rounded-xl border border-line p-2.5 text-paper-muted transition-colors hover:bg-line hover:text-paper"
+                      className="rounded-xl border border-line p-2.5 text-paper-muted transition-colors hover:bg-line hover:text-paper cursor-pointer"
                       title="Edit"
                     >
                       <Edit3 className="size-4" />
                     </button>
                   </>
                 )}
-                {canMarkForReview && ticket.status === 2 && (
+                {/* Complete Button: ONLY visible when status is In Review AND current user is the assigner */}
+                {canComplete && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewComment('')
+                      setCompleteModalOpen(true)
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-emerald-600 px-3.5 py-2.5 text-xs font-semibold text-paper shadow-lg shadow-emerald-950/40 transition-all hover:bg-emerald-500 cursor-pointer"
+                    title="Complete ticket with review"
+                  >
+                    <CheckCircle2 className="size-4" />
+                    <span>Complete</span>
+                  </button>
+                )}
+                {canMarkForReview && isInProgress && (
                   <button
                     type="button"
                     onClick={handleMarkForReview}
-                    className="rounded-xl bg-purple-500/15 px-3 py-2.5 text-xs font-semibold text-purple-400 transition-colors hover:bg-purple-500/25"
+                    className="inline-flex items-center gap-1.5 rounded-xl bg-purple-500/15 px-3 py-2.5 text-xs font-semibold text-purple-400 transition-colors hover:bg-purple-500/25 cursor-pointer"
+                    title="Send ticket for review"
                   >
                     <Send className="size-4" />
+                    <span>Mark for Review</span>
                   </button>
                 )}
                 {canDelete && (
                   <button
                     type="button"
-                    onClick={() => setDeleteOpen(true)}
-                    className="rounded-xl border border-red-500/30 p-2.5 text-red-400 transition-colors hover:bg-red-500/15"
+                    onClick={handleDeleteClick}
+                    className="rounded-xl border border-red-500/30 p-2.5 text-red-400 transition-colors hover:bg-red-500/15 cursor-pointer"
                     title="Delete"
                   >
                     <Trash2 className="size-4" />
@@ -489,11 +775,13 @@ export default function TicketDetail() {
                 icon={User}
                 label="Created by"
                 value={ticket.createdByName}
+                email={createdEmail}
               />
               <DetailRow
                 icon={User}
                 label="Assigned to"
                 value={ticket.assignedToName ?? 'Unassigned'}
+                email={assignedEmail}
               />
               <DetailRow
                 icon={Calendar}
@@ -597,43 +885,69 @@ export default function TicketDetail() {
             </div>
           </div>
 
-          {/* Approval for managers */}
-          {canApprove && (
+          {/* In Review status card */}
+          {isInReview && (
             <div className="rounded-2xl border border-purple-500/30 bg-purple-500/5 p-5">
-              <h3 className="mb-3 flex items-center gap-2 text-sm font-semibold text-purple-400">
-                <CheckCircle2 className="size-4" />
-                Review Required
-              </h3>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={async () => {
-                    await api.put(`/tickets/${id}/approve-completion`, {
-                      approvalRemark: 'Approved',
-                    })
-                    toast('success', 'Approved!')
-                    fetchTicket()
-                  }}
-                  className="flex-1 rounded-xl bg-green-600 py-2 text-xs font-semibold text-paper hover:bg-green-500"
-                >
-                  Approve
-                </button>
-                <button
-                  type="button"
-                  onClick={async () => {
-                    const reason = prompt('Rejection reason:')
-                    if (!reason) return
-                    await api.put(`/tickets/${id}/reject-completion`, {
-                      rejectionReason: reason,
-                    })
-                    toast('info', 'Ticket rejected')
-                    fetchTicket()
-                  }}
-                  className="flex-1 rounded-xl bg-red-600 py-2 text-xs font-semibold text-paper hover:bg-red-500"
-                >
-                  Reject
-                </button>
+              <div className="flex items-center justify-between">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-purple-400">
+                  <CheckCircle2 className="size-4" />
+                  In Review
+                </h3>
+                <span className="rounded-full bg-purple-500/20 px-2 py-0.5 text-[10px] font-semibold text-purple-300">
+                  Pending Completion
+                </span>
               </div>
+              <p className="mt-2 text-xs text-paper-muted leading-relaxed">
+                {isAssigner
+                  ? 'You assigned this ticket. Please review the deliverables and complete the ticket with your review.'
+                  : `Waiting for ${ticket.createdByName || 'the assigner'}${createdEmail ? ` (${createdEmail})` : ''} to review and complete this ticket.`}
+              </p>
+
+              {/* Complete button is strictly visible ONLY to the assigner */}
+              {canComplete && (
+                <div className="mt-4 flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setReviewComment('')
+                      setCompleteModalOpen(true)
+                    }}
+                    className="flex-1 inline-flex items-center justify-center gap-1.5 rounded-xl bg-emerald-600 py-2.5 text-xs font-semibold text-paper shadow-lg shadow-emerald-950/40 transition-all hover:bg-emerald-500 cursor-pointer"
+                  >
+                    <CheckCircle2 className="size-4" />
+                    Complete Ticket
+                  </button>
+                  <button
+                    type="button"
+                    onClick={async () => {
+                      const reason = prompt('Please specify why this ticket is being sent back:')
+                      if (!reason) return
+                      try {
+                        await api.put(`/tickets/${id}/reject-completion`, {
+                          rejectionReason: reason,
+                        })
+                        try {
+                          await api.post(`/tickets/${id}/comments`, {
+                            content: `⚠️ **Changes Requested**: ${reason}`,
+                          })
+                        } catch {}
+                        toast('info', 'Ticket sent back for changes')
+                        fetchTicket()
+                      } catch (err: unknown) {
+                        toast(
+                          'error',
+                          (err as { response?: { data?: { message?: string } } })?.response?.data
+                            ?.message ?? 'Failed to send back ticket',
+                        )
+                      }
+                    }}
+                    className="rounded-xl border border-red-500/30 bg-red-500/10 px-3 py-2.5 text-xs font-semibold text-red-400 transition-colors hover:bg-red-500/20 cursor-pointer"
+                    title="Send back for changes"
+                  >
+                    Send Back
+                  </button>
+                </div>
+              )}
             </div>
           )}
         </motion.div>
@@ -697,9 +1011,14 @@ export default function TicketDetail() {
                 onChange={(e) => setEditStatus(e.target.value)}
                 className="rounded-xl border border-line bg-ink/60 px-3 py-3 text-sm text-paper outline-none focus:border-brand"
               >
-                {Object.entries(statusMapping).map(([val, label]) => (
-                  <option key={val} value={val}>{label}</option>
-                ))}
+                {Object.entries(statusMapping).map(([val, label]) => {
+                  if (val.toLowerCase() === 'completed' && String(ticket?.status).toLowerCase() !== 'completed') {
+                    return null
+                  }
+                  return (
+                    <option key={val} value={val}>{label}</option>
+                  )
+                })}
               </select>
             </label>
             <label className="flex flex-col gap-1.5">
@@ -807,6 +1126,88 @@ export default function TicketDetail() {
           </div>
         </div>
       </Modal>
+
+      {/* Complete Ticket & Add Review Modal */}
+      <Modal
+        open={completeModalOpen}
+        onClose={() => {
+          if (!completeLoading) setCompleteModalOpen(false)
+        }}
+        title="Complete Ticket & Add Review"
+        maxWidth="max-w-lg"
+      >
+        <div className="flex flex-col gap-4">
+          <div className="rounded-xl border border-line bg-ink/40 p-4">
+            <div className="flex items-center justify-between text-xs">
+              <span className="font-mono text-paper-muted">Ticket #{ticket.id}</span>
+              <span className="rounded-full bg-purple-500/20 px-2.5 py-0.5 font-semibold text-purple-300">
+                In Review
+              </span>
+            </div>
+            <p className="mt-1.5 text-sm font-semibold text-paper">
+              {ticket.title}
+            </p>
+            {ticket.assignedToName && (
+              <p className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-paper-muted">
+                <span>Assigned to:</span>
+                <span className="font-medium text-paper">
+                  {ticket.assignedToName}
+                </span>
+                {assignedEmail && (
+                  <span className="font-mono text-[11px] text-paper-muted/80">
+                    ({assignedEmail})
+                  </span>
+                )}
+              </p>
+            )}
+          </div>
+
+          <label htmlFor="complete-review-textarea" className="flex flex-col gap-1.5">
+            <span className="flex items-center justify-between text-xs font-semibold uppercase tracking-wider text-paper-muted">
+              <span>Review & Feedback</span>
+              <span className="text-emerald-400 font-normal">Required</span>
+            </span>
+            <p className="text-xs text-paper-muted leading-relaxed">
+              Please provide your review, verification remarks, or feedback for the assignee before completing this ticket.
+            </p>
+            <textarea
+              id="complete-review-textarea"
+              rows={4}
+              required
+              value={reviewComment}
+              onChange={(e) => setReviewComment(e.target.value)}
+              placeholder="e.g. Verified deliverables on staging. Code meets all quality standards and acceptance criteria. Approved!"
+              className="mt-1 w-full resize-none rounded-xl border border-line bg-ink/60 p-3.5 text-sm text-paper outline-none transition-all placeholder:text-paper-muted/50 focus:border-emerald-500 focus:shadow-[0_0_0_3px_rgba(16,185,129,0.15)]"
+            />
+          </label>
+
+          <div className="flex justify-end gap-3 border-t border-line pt-4">
+            <button
+              type="button"
+              disabled={completeLoading}
+              onClick={() => setCompleteModalOpen(false)}
+              className="rounded-xl border border-line px-5 py-2.5 text-sm font-medium text-paper-muted transition-colors hover:bg-line hover:text-paper disabled:opacity-50 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={completeLoading || !reviewComment.trim()}
+              onClick={handleCompleteWithReview}
+              className="inline-flex items-center gap-2 rounded-xl bg-emerald-600 px-5 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-emerald-950/40 transition-all hover:bg-emerald-500 disabled:opacity-50 disabled:hover:bg-emerald-600 cursor-pointer"
+            >
+              {completeLoading ? (
+                <Spinner size="sm" />
+              ) : (
+                <>
+                  <CheckCircle2 className="size-4" />
+                  <span>Complete Ticket</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
     </div>
   )
 }
@@ -815,11 +1216,13 @@ function DetailRow({
   icon: Icon,
   label,
   value,
+  email,
   warn = false,
 }: {
   icon: typeof User
   label: string
   value: string
+  email?: string | null
   warn?: boolean
 }) {
   return (
@@ -828,13 +1231,24 @@ function DetailRow({
         <Icon className="size-3" />
         {label}
       </span>
-      <span
-        className={`mt-0.5 block text-sm font-medium ${
-          warn ? 'text-red-400' : 'text-paper'
-        }`}
-      >
-        {value}
-      </span>
+      <div className="mt-0.5">
+        <span
+          className={`block text-sm font-medium ${
+            warn ? 'text-red-400' : 'text-paper'
+          }`}
+        >
+          {value}
+        </span>
+        {email && (
+          <span
+            className="mt-0.5 flex items-center gap-1.5 text-[11px] font-mono text-paper-muted/80 break-all"
+            title={email}
+          >
+            <Mail className="size-2.5 shrink-0 text-brand" />
+            <span>{email}</span>
+          </span>
+        )}
+      </div>
     </div>
   )
 }

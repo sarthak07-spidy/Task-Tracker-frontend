@@ -30,6 +30,15 @@ export interface LoginPayload {
   password: string
 }
 
+export interface ForgotPasswordPayload {
+  email: string
+}
+
+export interface ForgotPasswordResponse {
+  success: boolean
+  message: string
+}
+
 export interface RefreshPayload {
   refreshToken: string
 }

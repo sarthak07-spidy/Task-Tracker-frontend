@@ -6,12 +6,18 @@ interface StatusDropdownProps {
   currentStatus: string | number
   onStatusChange: (status: string) => void
   disabled?: boolean
+  canComplete?: boolean
+  isInReview?: boolean
+  onOpenCompleteModal?: () => void
 }
 
 export default function StatusDropdown({
   currentStatus,
   onStatusChange,
   disabled = false,
+  canComplete = false,
+  isInReview = false,
+  onOpenCompleteModal,
 }: StatusDropdownProps) {
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
@@ -52,15 +58,26 @@ export default function StatusDropdown({
         <div className="absolute left-0 top-full z-30 mt-1 w-44 overflow-hidden rounded-xl border border-line bg-ink-soft shadow-xl shadow-ink/60">
           {Object.entries(statusMapping).map(([key, label]) => {
             const isActive = key.toLowerCase() === statusKey.toLowerCase()
+            const isCompleted = key.toLowerCase() === 'completed'
+            
+            // Only show Completed option if it is already Completed OR (ticket is InReview and user canComplete)
+            if (isCompleted && !isActive && !canComplete) {
+              return null
+            }
+
             return (
               <button
                 key={key}
                 type="button"
                 onClick={() => {
-                  onStatusChange(key)
+                  if (isCompleted && canComplete && onOpenCompleteModal) {
+                    onOpenCompleteModal()
+                  } else {
+                    onStatusChange(key)
+                  }
                   setOpen(false)
                 }}
-                className={`flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors ${
+                className={`flex w-full items-center gap-2 px-3 py-2 text-sm transition-colors cursor-pointer ${
                   isActive
                     ? 'bg-line font-semibold text-paper'
                     : 'text-paper-muted hover:bg-line hover:text-paper'

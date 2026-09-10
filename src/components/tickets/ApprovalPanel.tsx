@@ -81,17 +81,32 @@ export default function ApprovalPanel() {
 
   async function submitAction() {
     if (!actionTicket) return
+    const trimmedRemark = remark.trim()
+    if (!trimmedRemark) {
+      toast('error', actionType === 'approve' ? 'Please enter your review / remarks before completing.' : 'Please provide a reason.')
+      return
+    }
     setActionLoading(true)
     try {
       if (actionType === 'approve') {
         await api.put(`/tickets/${actionTicket.id}/approve-completion`, {
-          approvalRemark: remark || 'Approved',
+          approvalRemark: trimmedRemark,
         })
-        toast('success', 'Ticket approved successfully')
+        try {
+          await api.post(`/tickets/${actionTicket.id}/comments`, {
+            content: `📋 **Completion Review**: ${trimmedRemark}`,
+          })
+        } catch {}
+        toast('success', 'Ticket completed with review!')
       } else {
         await api.put(`/tickets/${actionTicket.id}/reject-completion`, {
-          rejectionReason: remark || 'Needs changes',
+          rejectionReason: trimmedRemark,
         })
+        try {
+          await api.post(`/tickets/${actionTicket.id}/comments`, {
+            content: `⚠️ **Changes Requested**: ${trimmedRemark}`,
+          })
+        } catch {}
         toast('info', 'Ticket sent back for changes')
       }
       setActionTicket(null)
@@ -146,8 +161,15 @@ export default function ApprovalPanel() {
                   <p className="truncate text-sm font-medium text-paper hover:text-brand transition-colors">
                     {ticket.title}
                   </p>
-                  <div className="mt-1 flex items-center gap-3 text-xs text-paper-muted">
-                    <span>{ticket.assignedToName ?? 'Unassigned'}</span>
+                  <div className="mt-1 flex items-center gap-3 text-xs text-paper-muted flex-wrap">
+                    <span>
+                      {ticket.assignedToName ?? 'Unassigned'}
+                      {ticket.assignedToEmail && (
+                        <span className="ml-1 font-mono text-[11px] text-paper-muted/80">
+                          ({ticket.assignedToEmail})
+                        </span>
+                      )}
+                    </span>
                     <span>
                       Due{' '}
                       {new Date(ticket.dueDate).toLocaleDateString('en-US', {
@@ -163,18 +185,34 @@ export default function ApprovalPanel() {
                     color={PriorityColor[ticket.priority] ?? '#f59e0b'}
                     size="sm"
                   />
-                  <button
-                    type="button"
-                    onClick={() => openAction(ticket, 'approve')}
-                    className="rounded-lg bg-green-500/15 p-2 text-green-400 transition-colors hover:bg-green-500/25"
-                    title="Approve"
-                  >
-                    <CheckCircle className="size-4" />
-                  </button>
+                  {/* Complete button: strictly visible ONLY to the assigner */}
+                  {Boolean(
+                    user &&
+                      (
+                        (ticket.assignedByUserId != null &&
+                          (Number(ticket.assignedByUserId) === Number(user.userId) ||
+                            String(ticket.assignedByUserId) === String(user.userId))) ||
+                        (ticket.createdByUserId != null &&
+                          (Number(ticket.createdByUserId) === Number(user.userId) ||
+                            String(ticket.createdByUserId) === String(user.userId))) ||
+                        (ticket.createdByEmail &&
+                          user.email &&
+                          ticket.createdByEmail.toLowerCase() === user.email.toLowerCase())
+                      )
+                  ) && (
+                    <button
+                      type="button"
+                      onClick={() => openAction(ticket, 'approve')}
+                      className="rounded-lg bg-green-500/15 p-2 text-green-400 transition-colors hover:bg-green-500/25 cursor-pointer"
+                      title="Complete Ticket & Add Review"
+                    >
+                      <CheckCircle className="size-4" />
+                    </button>
+                  )}
                   <button
                     type="button"
                     onClick={() => openAction(ticket, 'reject')}
-                    className="rounded-lg bg-red-500/15 p-2 text-red-400 transition-colors hover:bg-red-500/25"
+                    className="rounded-lg bg-red-500/15 p-2 text-red-400 transition-colors hover:bg-red-500/25 cursor-pointer"
                     title="Reject"
                   >
                     <XCircle className="size-4" />
@@ -192,14 +230,14 @@ export default function ApprovalPanel() {
         onClose={() => setActionTicket(null)}
         title={
           actionType === 'approve'
-            ? 'Approve Completion'
+            ? 'Complete Ticket & Add Review'
             : 'Reject Completion'
         }
         maxWidth="max-w-md"
       >
         <p className="mb-4 text-sm text-paper-muted">
           {actionType === 'approve'
-            ? `Approve "${actionTicket?.title}"? Add an optional remark.`
+            ? `Complete "${actionTicket?.title}"? Please provide your review / feedback.`
             : `Reject "${actionTicket?.title}"? Please provide a reason.`}
         </p>
         <textarea
@@ -207,26 +245,26 @@ export default function ApprovalPanel() {
           onChange={(e) => setRemark(e.target.value)}
           placeholder={
             actionType === 'approve'
-              ? 'Great work! (optional)'
-              : 'Reason for rejection…'
+              ? 'Enter review feedback or acceptance remarks… (Required)'
+              : 'Reason for rejection… (Required)'
           }
           rows={3}
           className="w-full resize-none rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none placeholder:text-paper-muted/60 focus:border-brand"
-          required={actionType === 'reject'}
+          required
         />
         <div className="mt-4 flex justify-end gap-3">
           <button
             type="button"
             onClick={() => setActionTicket(null)}
-            className="rounded-xl border border-line px-4 py-2 text-sm font-medium text-paper-muted hover:bg-line"
+            className="rounded-xl border border-line px-4 py-2 text-sm font-medium text-paper-muted hover:bg-line cursor-pointer"
           >
             Cancel
           </button>
           <button
             type="button"
             onClick={submitAction}
-            disabled={actionLoading || (actionType === 'reject' && !remark.trim())}
-            className={`rounded-xl px-4 py-2 text-sm font-semibold text-paper disabled:opacity-50 ${
+            disabled={actionLoading || !remark.trim()}
+            className={`rounded-xl px-4 py-2 text-sm font-semibold text-paper disabled:opacity-50 cursor-pointer ${
               actionType === 'approve'
                 ? 'bg-green-600 hover:bg-green-500'
                 : 'bg-red-600 hover:bg-red-500'
@@ -235,7 +273,7 @@ export default function ApprovalPanel() {
             {actionLoading ? (
               <Spinner size="sm" />
             ) : actionType === 'approve' ? (
-              'Approve'
+              'Complete Ticket'
             ) : (
               'Reject'
             )}

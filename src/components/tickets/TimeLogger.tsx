@@ -37,7 +37,7 @@ export default function TimeLogger({ currentHours, onLog }: TimeLoggerProps) {
           value={hours}
           onChange={(e) => setHours(e.target.value)}
           placeholder="Hours"
-          className="w-16 bg-transparent text-sm text-paper outline-none placeholder:text-paper-muted/60"
+          className="w-16 bg-transparent text-sm text-paper outline-none placeholder:text-paper-muted/60 [appearance:textfield] [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
         />
         <span className="text-xs text-paper-muted">hrs</span>
       </div>

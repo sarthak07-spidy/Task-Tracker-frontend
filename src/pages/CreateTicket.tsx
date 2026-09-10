@@ -35,7 +35,7 @@ export default function CreateTicket() {
     const saved = localStorage.getItem('t_tracker_selected_project_id')
     return saved ? Number(saved) : ''
   })
-  const [assignedToUserId, setAssignedToUserId] = useState<number | ''>('')
+  const [assignedToUserId, setAssignedToUserId] = useState<number | string | ''>('')
   const [priority, setPriority] = useState('')
   const [category, setCategory] = useState('')
   const [userStoryId, setUserStoryId] = useState('')
@@ -81,32 +81,98 @@ export default function CreateTicket() {
 
       setMembersLoading(true)
 
-      const mapMember = (m: Record<string, unknown>) => {
-        // Try all common field name conventions (.NET PascalCase + JS camelCase)
-        const rawId =
-          m.userId ?? m.UserId ?? m.id ?? m.Id ?? m.user_id
-        const email = (m.email as string) || (m.Email as string) || ''
-        const name = (
-          (m.userName as string) ||
-          (m.UserName as string) ||
-          (m.fullName as string) ||
-          (m.FullName as string) ||
-          `${(m.firstName as string) ?? (m.FirstName as string) ?? ''} ${(m.lastName as string) ?? (m.LastName as string) ?? ''}`.trim()
-        ).trim() || email || `Member #${rawId}`
+      // Fetch employee directory (/SuperAdmin/users or /Users/employees) to enrich member IDs & names
+      const employeeMap = new Map<string, { id: number; fullName: string; designation?: string; department?: string }>()
+      try {
+        let empList: Array<Record<string, unknown>> = []
+        try {
+          const empRes = await api.get('/SuperAdmin/users')
+          const d = empRes.data?.success ? empRes.data.data : empRes.data
+          if (Array.isArray(d)) empList = d
+        } catch {
+          const empRes2 = await api.get('/Users/employees')
+          const d2 = empRes2.data?.success ? empRes2.data.data : empRes2.data
+          if (Array.isArray(d2)) empList = d2
+        }
+        empList.forEach((e) => {
+          const email = ((e.email as string) || '').toLowerCase().trim()
+          const id = Number(e.id ?? e.userId)
+          if (email && !isNaN(id) && id > 0) {
+            employeeMap.set(email, {
+              id,
+              fullName:
+                (e.fullName as string) ||
+                `${(e.firstName as string) ?? ''} ${(e.lastName as string) ?? ''}`.trim(),
+              designation: e.designation as string,
+              department: e.department as string,
+            })
+          }
+        })
+      } catch {
+        // ignore directory load failure
+      }
 
-        // Use numeric ID if valid, else fall back to email as unique key
+      const mapMember = (m: Record<string, unknown>, index: number): ProjectMember => {
+        const email = ((m.email as string) || (m.Email as string) || '').trim()
+        const emailKey = email.toLowerCase()
+        const emp = employeeMap.get(emailKey)
+
+        // Raw ID candidates from member payload
+        const rawId = m.userId ?? m.UserId ?? m.id ?? m.Id ?? m.user_id
         const numId = rawId !== undefined && rawId !== null ? Number(rawId) : NaN
-        const finalId: number | string = !isNaN(numId) ? numId : email
+
+        // Prefer employee directory ID if valid, then valid positive numId, then email, then index
+        let finalId: number | string = ''
+        if (emp && emp.id > 0) {
+          finalId = emp.id
+        } else if (!isNaN(numId) && numId > 0) {
+          finalId = numId
+        } else if (email) {
+          finalId = email
+        } else {
+          finalId = `member-${index}`
+        }
+
+        const name =
+          emp?.fullName ||
+          (
+            (m.userName as string) ||
+            (m.UserName as string) ||
+            (m.fullName as string) ||
+            (m.FullName as string) ||
+            `${(m.firstName as string) ?? (m.FirstName as string) ?? ''} ${(m.lastName as string) ?? (m.LastName as string) ?? ''}`.trim()
+          ).trim() ||
+          email ||
+          `Member #${finalId}`
 
         return {
           userId: finalId as number,
           firstName: name,
           lastName: '',
           email,
-          role: (m.role as string) || (m.Role as string) || (m.designation as string) || 'Member',
-          designation: (m.designation as string) || '',
-          department: (m.department as string) || '',
+          role:
+            (m.role as string) ||
+            (m.Role as string) ||
+            (m.designation as string) ||
+            emp?.designation ||
+            'Member',
+          designation: (m.designation as string) || emp?.designation || '',
+          department: (m.department as string) || emp?.department || '',
         }
+      }
+
+      function processMembers(rawList: Array<Record<string, unknown>>): ProjectMember[] {
+        const mapped = rawList.map(mapMember)
+        const unique: ProjectMember[] = []
+        const seen = new Set<string>()
+        for (const item of mapped) {
+          const key = String(item.userId || item.email)
+          if (!seen.has(key)) {
+            seen.add(key)
+            unique.push(item)
+          }
+        }
+        return unique
       }
 
       // 1. PRIMARY: assignable/members — excludes the logged-in user automatically
@@ -115,7 +181,7 @@ export default function CreateTicket() {
         const data = res?.data
         const list = (data?.success && data?.data) ? data.data : (Array.isArray(data) ? data : data?.members || data?.data || [])
         if (Array.isArray(list) && list.length > 0) {
-          setMembers(list.map(mapMember))
+          setMembers(processMembers(list))
           setMembersLoading(false)
           return
         }
@@ -129,7 +195,7 @@ export default function CreateTicket() {
         const data = res?.data
         const raw = (data?.success && data?.data) ? data.data : (Array.isArray(data) ? data : data?.members || data?.data || [])
         if (Array.isArray(raw) && raw.length > 0) {
-          setMembers(raw.map(mapMember))
+          setMembers(processMembers(raw))
           setMembersLoading(false)
           return
         }
@@ -143,7 +209,7 @@ export default function CreateTicket() {
         if (cached) {
           const parsed = JSON.parse(cached)
           if (Array.isArray(parsed) && parsed.length > 0) {
-            setMembers(parsed.map(mapMember))
+            setMembers(processMembers(parsed))
             setMembersLoading(false)
             return
           }
@@ -197,7 +263,20 @@ export default function CreateTicket() {
       dueDate: new Date(dueDate).toISOString(),
     }
     if (projectId) payload.projectId = Number(projectId)
-    if (assignedToUserId) payload.assignedToUserId = Number(assignedToUserId)
+    if (assignedToUserId) {
+      const num = Number(assignedToUserId)
+      if (!isNaN(num) && num > 0) {
+        payload.assignedToUserId = num
+      } else {
+        const found = members.find(
+          (m) => String(m.userId) === String(assignedToUserId) || m.email === assignedToUserId,
+        )
+        const foundNum = found ? Number(found.userId) : NaN
+        if (!isNaN(foundNum) && foundNum > 0) {
+          payload.assignedToUserId = foundNum
+        }
+      }
+    }
     if (priority) payload.priority = priority
     if (category) payload.category = category
     if (userStoryId) payload.userStoryId = userStoryId
@@ -350,7 +429,7 @@ export default function CreateTicket() {
               badge: m.role || m.department,
             }))}
             value={assignedToUserId}
-            onChange={(val) => setAssignedToUserId(val === '' ? '' : Number(val))}
+            onChange={(val) => setAssignedToUserId(val)}
             placeholder={
               !projectId
                 ? 'Select a project first'

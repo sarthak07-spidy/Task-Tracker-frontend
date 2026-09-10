@@ -129,6 +129,17 @@
     scrollbar-width: none !important;
   }
 
+  /* Remove default spinner arrows from number inputs */
+  input[type='number']::-webkit-outer-spin-button,
+  input[type='number']::-webkit-inner-spin-button {
+    -webkit-appearance: none;
+    margin: 0;
+  }
+  input[type='number'] {
+    -moz-appearance: textfield;
+    appearance: textfield;
+  }
+
   /* Crazy Yenner Soft Atmosphere: Warm Champagne Yellow & Soft Titanium Slate Grey */
   :root[data-theme='crazy'] body {
     background-color: #212429;
