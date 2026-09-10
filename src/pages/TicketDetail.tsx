@@ -12,9 +12,11 @@ import {
   Edit3,
   Send,
   CheckCircle2,
+  XCircle,
   AlertCircle,
   FolderKanban,
   Mail,
+  Lock,
 } from 'lucide-react'
 import api from '../lib/api'
 import { useAuth } from '../context/AuthContext'
@@ -66,6 +68,11 @@ export default function TicketDetail() {
   const [completeModalOpen, setCompleteModalOpen] = useState(false)
   const [reviewComment, setReviewComment] = useState('')
   const [completeLoading, setCompleteLoading] = useState(false)
+
+  // Reject assignment modal state (only for assignee while ticket is Open)
+  const [rejectModalOpen, setRejectModalOpen] = useState(false)
+  const [rejectReason, setRejectReason] = useState('')
+  const [rejectLoading, setRejectLoading] = useState(false)
 
   // Edit form state — all API-supported fields
   const [editTitle, setEditTitle] = useState('')
@@ -225,21 +232,69 @@ export default function TicketDetail() {
         String(ticket.status) === '2')
   )
 
+  // Ticket status is Open
+  const isOpen = Boolean(
+    ticket &&
+      (ticket.status === 'Open' ||
+        ticket.status === 1 ||
+        String(ticket.status).toLowerCase() === 'open' ||
+        String(ticket.status) === '1' ||
+        TicketStatusLabel[ticket.status] === 'Open')
+  )
+
+  // Rejection rule: ONLY the person to whom the ticket is assigned can reject it,
+  // and ONLY while status is Open. As soon as status is changed away from Open, reject button disappears!
+  const canRejectAssignment = Boolean(isAssigned && isOpen)
+
   // Complete button is strictly visible ONLY to the assigner, and ONLY when status is In Review
   const canComplete = isInReview && isAssigner
+
+  // Ticket is fully finalized — no edits, no new comments, no status changes allowed
+  const isClosed = Boolean(
+    ticket &&
+      (ticket.status === 'Closed' ||
+        ticket.status === 'Close' ||
+        ticket.status === 5 ||
+        String(ticket.status).toLowerCase() === 'closed' ||
+        String(ticket.status).toLowerCase() === 'close' ||
+        String(ticket.status) === '5')
+  )
+
+  const isRejected = Boolean(
+    ticket &&
+      (ticket.status === 'Rejected' ||
+        ticket.status === 'Reject' ||
+        ticket.status === 6 ||
+        String(ticket.status).toLowerCase() === 'rejected' ||
+        String(ticket.status).toLowerCase() === 'reject' ||
+        String(ticket.status) === '6')
+  )
+
+  // Also treat Completed status as finalized (backend may return 'Completed' before changing to 'Closed')
+  const isCompletedStatus = Boolean(
+    ticket &&
+      (ticket.status === 'Completed' ||
+        ticket.status === 4 ||
+        String(ticket.status).toLowerCase() === 'completed' ||
+        String(ticket.status) === '4')
+  )
+
+  // isFinalized = ticket cannot be edited, commented on, or have its status changed
+  const isFinalized = isClosed || isRejected || isCompletedStatus
 
   const isManager =
     user?.role === 'Manager' ||
     user?.role === 'SuperAdmin' ||
     user?.role === 'TeamLead'
-  const canEdit = isCreator || isAssigned || isManager
-  const canDelete = isCreator
-  const canMarkForReview = isAssigned || isManager
+  // canEdit is blocked when ticket is finalized
+  const canEdit = !isFinalized && (isCreator || isAssigned || isManager)
+  const canDelete = !isFinalized && isCreator
+  const canMarkForReview = !isFinalized && (isAssigned || isManager)
   const canApprove = isManager && isInReview
 
-  const fetchTicket = useCallback(async () => {
+  const fetchTicket = useCallback(async (silent = false) => {
     if (!id) return
-    setLoading(true)
+    if (!silent) setLoading(true)
     let loadedTicket: Ticket | null = null
 
     try {
@@ -284,7 +339,7 @@ export default function TicketDetail() {
               .catch(() => {})
           })
       }
-    } else {
+    } else if (!silent) {
       setTicket(null)
       toast('error', 'Failed to load ticket')
     }
@@ -298,11 +353,15 @@ export default function TicketDetail() {
       }
     } catch {
       // Comments may be empty or not created yet
-      setComments(null)
+      if (!silent) setComments(null)
     } finally {
-      setLoading(false)
+      if (!silent) setLoading(false)
     }
   }, [id, toast])
+
+  // Silent background refresh — used after actions (status change, complete, reject etc.)
+  // so the screen doesn't flash a full-page loader
+  const silentRefresh = useCallback(() => fetchTicket(true), [fetchTicket])
 
   useEffect(() => {
     fetchTicket()
@@ -341,7 +400,7 @@ export default function TicketDetail() {
         }
       }
       toast('success', 'Status updated')
-      fetchTicket()
+      silentRefresh()
     } catch (err: unknown) {
       toast(
         'error',
@@ -363,26 +422,40 @@ export default function TicketDetail() {
 
     setCompleteLoading(true)
     try {
-      // 1. Try approve-completion endpoint with the review remark
+      // 1. Call PUT /api/Tickets/{id}/completed with ApprovalRemark (Swagger endpoint)
       try {
-        await api.put(`/tickets/${id}/approve-completion`, {
+        await api.put(`/Tickets/${id}/completed`, {
+          ApprovalRemark: review,
           approvalRemark: review,
         })
       } catch (e: unknown) {
         const status = (e as { response?: { status?: number } })?.response?.status
         if (status === 404 || status === 405) {
-          // Fallback to direct status update to Completed
           try {
-            await api.put(`/tickets/${id}/status`, { status: 'Completed' })
+            await api.put(`/tickets/${id}/completed`, {
+              ApprovalRemark: review,
+              approvalRemark: review,
+            })
           } catch {
-            await api.put(`/Tickets/${id}/status`, { status: 'Completed' })
+            try {
+              await api.put(`/tickets/${id}/approve-completion`, {
+                approvalRemark: review,
+                ApprovalRemark: review,
+              })
+            } catch {
+              try {
+                await api.put(`/tickets/${id}/status`, { status: 'Closed' })
+              } catch {
+                await api.put(`/Tickets/${id}/status`, { status: 'Closed' })
+              }
+            }
           }
         } else {
           throw e
         }
       }
 
-      // 2. Also post the review comment into thread for full visibility
+      // 2. Also post review comment into thread for transparency
       try {
         await api.post(`/tickets/${id}/comments`, {
           content: `📋 **Completion Review**: ${review}`,
@@ -391,10 +464,10 @@ export default function TicketDetail() {
         // non-blocking
       }
 
-      toast('success', 'Ticket completed successfully with review!')
+      toast('success', 'Ticket completed successfully!')
       setCompleteModalOpen(false)
       setReviewComment('')
-      fetchTicket()
+      silentRefresh()
     } catch (err: unknown) {
       toast(
         'error',
@@ -403,6 +476,61 @@ export default function TicketDetail() {
       )
     } finally {
       setCompleteLoading(false)
+    }
+  }
+
+  // Assignee rejects assignment while ticket is Open
+  async function handleRejectAssignment() {
+    if (!ticket) return
+    const reason = rejectReason.trim()
+    if (!reason) {
+      toast('error', 'Please provide a reason for rejecting this assignment.')
+      return
+    }
+
+    setRejectLoading(true)
+    try {
+      try {
+        await api.put(`/Tickets/${id}/rejected`, {
+          RejectionReason: reason,
+          rejectionReason: reason,
+          reason,
+        })
+      } catch {
+        try {
+          await api.put(`/Tickets/${id}/reject`, {
+            RejectionReason: reason,
+            rejectionReason: reason,
+            reason,
+          })
+        } catch {
+          try {
+            await api.put(`/Tickets/${id}/status`, { status: 'Rejected', rejectionReason: reason })
+          } catch {
+            await api.put(`/tickets/${id}/status`, { status: 'Rejected', rejectionReason: reason })
+          }
+        }
+      }
+
+      // Add comment thread entry for assignment rejection
+      try {
+        await api.post(`/tickets/${id}/comments`, {
+          content: `❌ **Assignment Rejected by Assignee**: ${reason}`,
+        })
+      } catch {}
+
+      toast('info', 'Ticket assignment has been rejected.')
+      setRejectModalOpen(false)
+      setRejectReason('')
+      silentRefresh()
+    } catch (err: unknown) {
+      toast(
+        'error',
+        (err as { response?: { data?: { message?: string } } })?.response?.data
+          ?.message ?? 'Failed to reject ticket assignment',
+      )
+    } finally {
+      setRejectLoading(false)
     }
   }
 
@@ -419,7 +547,7 @@ export default function TicketDetail() {
         }
       }
       toast('success', 'Time logged')
-      fetchTicket()
+      silentRefresh()
     } catch (err: unknown) {
       toast(
         'error',
@@ -433,7 +561,7 @@ export default function TicketDetail() {
     try {
       await api.post(`/tickets/${id}/mark-for-review`)
       toast('success', 'Ticket marked for review')
-      fetchTicket()
+      silentRefresh()
     } catch (err: unknown) {
       toast(
         'error',
@@ -543,7 +671,7 @@ export default function TicketDetail() {
       await api.put(`/tickets/${id}`, payload)
       toast('success', 'Ticket updated')
       setEditOpen(false)
-      fetchTicket()
+      silentRefresh()
     } catch (err: unknown) {
       toast(
         'error',
@@ -683,6 +811,21 @@ export default function TicketDetail() {
                     <span>Complete</span>
                   </button>
                 )}
+                {/* Reject Assignment Button: ONLY visible to Assignee while status is Open */}
+                {canRejectAssignment && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setRejectReason('')
+                      setRejectModalOpen(true)
+                    }}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/10 px-3.5 py-2.5 text-xs font-semibold text-red-400 shadow-sm transition-all hover:bg-red-500/20 active:scale-95 cursor-pointer"
+                    title="Reject assignment (available only while Open)"
+                  >
+                    <XCircle className="size-4 text-red-400" />
+                    <span>Reject</span>
+                  </button>
+                )}
                 {canMarkForReview && isInProgress && (
                   <button
                     type="button"
@@ -707,6 +850,43 @@ export default function TicketDetail() {
               </div>
             </div>
 
+            {/* Finalized read-only banner — shown when ticket is Completed or Rejected */}
+            {isFinalized && (
+              <div className="mt-6 border-t border-line pt-5">
+                <div
+                  className={`flex items-start gap-3 rounded-2xl border p-4 ${
+                    isRejected
+                      ? 'border-red-500/30 bg-red-500/8'
+                      : 'border-emerald-500/30 bg-emerald-500/8'
+                  }`}
+                >
+                  <div
+                    className={`mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-xl ${
+                      isRejected
+                        ? 'bg-red-500/20 text-red-400'
+                        : 'bg-emerald-500/20 text-emerald-400'
+                    }`}
+                  >
+                    <Lock className="size-4" />
+                  </div>
+                  <div>
+                    <p
+                      className={`text-sm font-bold ${
+                        isRejected ? 'text-red-400' : 'text-emerald-400'
+                      }`}
+                    >
+                      {isRejected ? 'Ticket Rejected' : 'Ticket Completed & Closed'}
+                    </p>
+                    <p className="mt-0.5 text-xs text-paper-muted leading-relaxed">
+                      {isRejected
+                        ? 'This ticket was rejected. It is archived and no further changes can be made.'
+                        : 'This ticket has been completed and closed. It is now read-only and archived.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Description */}
             <div className="mt-6 border-t border-line pt-5">
               <h3 className="mb-2 text-xs font-semibold uppercase tracking-wider text-paper-muted">
@@ -717,7 +897,7 @@ export default function TicketDetail() {
               </p>
             </div>
 
-            {/* Time logging */}
+            {/* Time logging — hidden when finalized, show read-only hours */}
             {canEdit && (
               <div className="mt-5 border-t border-line pt-5">
                 <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-paper-muted">
@@ -729,16 +909,53 @@ export default function TicketDetail() {
                 />
               </div>
             )}
+            {isFinalized && (ticket.actualHours || ticket.estimatedHours) && (
+              <div className="mt-5 border-t border-line pt-5">
+                <h3 className="mb-3 text-xs font-semibold uppercase tracking-wider text-paper-muted">
+                  Time Summary
+                </h3>
+                <div className="flex items-center gap-4 text-sm text-paper-muted">
+                  <span className="flex items-center gap-1.5">
+                    <Clock className="size-3.5" />
+                    <span className="text-paper font-semibold">{ticket.actualHours ?? 0}h</span>
+                    <span>/ {ticket.estimatedHours ?? 0}h estimated</span>
+                  </span>
+                </div>
+              </div>
+            )}
           </div>
 
-          {/* Comments */}
-          <div className="rounded-2xl border border-line bg-ink-soft p-6">
-            <h2 className="mb-4 font-display text-lg font-bold text-paper">
-              Comments ({comments?.totalComments ?? 0})
-            </h2>
+          {/* Comments — read-only when ticket is finalized */}
+          <div
+            className={`rounded-2xl border p-6 ${
+              isFinalized
+                ? isRejected
+                  ? 'border-red-500/20 bg-ink-soft'
+                  : 'border-emerald-500/20 bg-ink-soft'
+                : 'border-line bg-ink-soft'
+            }`}
+          >
+            <div className="flex items-center gap-2 mb-4">
+              <h2 className="font-display text-lg font-bold text-paper">
+                Comments ({comments?.totalComments ?? 0})
+              </h2>
+              {isFinalized && (
+                <span
+                  className={`flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold ${
+                    isRejected
+                      ? 'bg-red-500/15 text-red-400'
+                      : 'bg-emerald-500/15 text-emerald-400'
+                  }`}
+                >
+                  <Lock className="size-2.5" />
+                  Read-only
+                </span>
+              )}
+            </div>
             <CommentThread
               comments={comments?.comments ?? []}
               onAddComment={handleAddComment}
+              readOnly={isFinalized}
             />
           </div>
         </motion.div>
@@ -932,7 +1149,7 @@ export default function TicketDetail() {
                           })
                         } catch {}
                         toast('info', 'Ticket sent back for changes')
-                        fetchTicket()
+                        silentRefresh()
                       } catch (err: unknown) {
                         toast(
                           'error',
@@ -948,6 +1165,37 @@ export default function TicketDetail() {
                   </button>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Assignee Rejection Card: ONLY visible to assignee when ticket is Open */}
+          {canRejectAssignment && (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/5 p-5">
+              <div className="flex items-center justify-between">
+                <h3 className="flex items-center gap-2 text-sm font-semibold text-red-400">
+                  <XCircle className="size-4" />
+                  Reject Assignment
+                </h3>
+                <span className="rounded-full bg-red-500/20 px-2 py-0.5 text-[10px] font-semibold text-red-300">
+                  Assignee Only
+                </span>
+              </div>
+              <p className="mt-2 text-xs text-paper-muted leading-relaxed">
+                You can reject this assignment if you are unable to work on this ticket. This option is only available while the ticket status is <span className="font-semibold text-paper">Open</span>.
+              </p>
+              <div className="mt-4">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setRejectReason('')
+                    setRejectModalOpen(true)
+                  }}
+                  className="w-full inline-flex items-center justify-center gap-1.5 rounded-xl border border-red-500/40 bg-red-500/10 py-2.5 text-xs font-semibold text-red-400 transition-all hover:bg-red-500/20 cursor-pointer"
+                >
+                  <XCircle className="size-4" />
+                  Reject Assignment
+                </button>
+              </div>
             </div>
           )}
         </motion.div>
@@ -1202,6 +1450,71 @@ export default function TicketDetail() {
                 <>
                   <CheckCircle2 className="size-4" />
                   <span>Complete Ticket</span>
+                </>
+              )}
+            </button>
+          </div>
+        </div>
+      </Modal>
+
+      {/* Reject Assignment Modal — only for assignee while ticket is Open */}
+      <Modal
+        open={rejectModalOpen}
+        onClose={() => setRejectModalOpen(false)}
+        title="Reject Assignment"
+        maxWidth="max-w-lg"
+      >
+        <div className="flex flex-col gap-5">
+          {/* Warning banner */}
+          <div className="flex items-start gap-3 rounded-xl border border-red-500/30 bg-red-500/8 p-4">
+            <XCircle className="mt-0.5 size-5 shrink-0 text-red-400" />
+            <div>
+              <p className="text-sm font-semibold text-red-400">Reject Assignment</p>
+              <p className="mt-0.5 text-xs text-paper-muted leading-relaxed">
+                You are rejecting the assignment of ticket <span className="font-semibold text-paper">"{ticket?.title}"</span>. Once rejected, the ticket status will change to <span className="font-semibold text-red-300">Rejected</span>.
+              </p>
+            </div>
+          </div>
+
+          <label className="flex flex-col gap-2">
+            <span className="text-sm font-semibold text-paper">
+              Reason for Rejection <span className="text-red-400">*</span>
+            </span>
+            <p className="text-xs text-paper-muted leading-relaxed">
+              Please explain why you are rejecting this assignment. This will be recorded as a comment.
+            </p>
+            <textarea
+              id="reject-reason-textarea"
+              rows={4}
+              required
+              value={rejectReason}
+              onChange={(e) => setRejectReason(e.target.value)}
+              placeholder="e.g. I don't have the required skills for this task, or the requirements are unclear..."
+              className="mt-1 w-full resize-none rounded-xl border border-line bg-ink/60 p-3.5 text-sm text-paper outline-none transition-all placeholder:text-paper-muted/50 focus:border-red-500 focus:shadow-[0_0_0_3px_rgba(239,68,68,0.15)]"
+            />
+          </label>
+
+          <div className="flex justify-end gap-3 border-t border-line pt-4">
+            <button
+              type="button"
+              disabled={rejectLoading}
+              onClick={() => setRejectModalOpen(false)}
+              className="rounded-xl border border-line px-5 py-2.5 text-sm font-medium text-paper-muted transition-colors hover:bg-line hover:text-paper disabled:opacity-50 cursor-pointer"
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              disabled={rejectLoading || !rejectReason.trim()}
+              onClick={handleRejectAssignment}
+              className="inline-flex items-center gap-2 rounded-xl bg-red-600 px-5 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-red-950/40 transition-all hover:bg-red-500 disabled:opacity-50 disabled:hover:bg-red-600 cursor-pointer"
+            >
+              {rejectLoading ? (
+                <Spinner size="sm" />
+              ) : (
+                <>
+                  <XCircle className="size-4" />
+                  <span>Reject Assignment</span>
                 </>
               )}
             </button>

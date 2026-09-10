@@ -1,20 +1,23 @@
 import { useState, useRef, useCallback } from 'react'
 import { motion } from 'framer-motion'
-import { Send, Reply, UserCircle } from 'lucide-react'
+import { Send, Reply, UserCircle, Lock } from 'lucide-react'
 import type { Comment, AddCommentPayload } from '../../lib/types'
 import Spinner from '../ui/Spinner'
 
 interface CommentThreadProps {
   comments: Comment[]
   onAddComment: (payload: AddCommentPayload) => Promise<void>
+  readOnly?: boolean
 }
 
 function CommentItem({
   comment,
   onReply,
+  readOnly,
 }: {
   comment: Comment
   onReply: (parentId: number) => void
+  readOnly?: boolean
 }) {
   return (
     <motion.div
@@ -52,14 +55,17 @@ function CommentItem({
         <p className="mt-1 text-sm leading-relaxed text-paper/90">
           {comment.content}
         </p>
-        <button
-          type="button"
-          onClick={() => onReply(comment.id)}
-          className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-paper-muted transition-colors hover:text-brand"
-        >
-          <Reply className="size-3" />
-          Reply
-        </button>
+        {/* Hide reply button when read-only */}
+        {!readOnly && (
+          <button
+            type="button"
+            onClick={() => onReply(comment.id)}
+            className="mt-1.5 flex items-center gap-1 text-[11px] font-medium text-paper-muted transition-colors hover:text-brand"
+          >
+            <Reply className="size-3" />
+            Reply
+          </button>
+        )}
 
         {/* Nested replies */}
         {comment.replies && comment.replies.length > 0 && (
@@ -69,6 +75,7 @@ function CommentItem({
                 key={reply.id}
                 comment={reply}
                 onReply={onReply}
+                readOnly={readOnly}
               />
             ))}
           </div>
@@ -81,6 +88,7 @@ function CommentItem({
 export default function CommentThread({
   comments,
   onAddComment,
+  readOnly = false,
 }: CommentThreadProps) {
   const [content, setContent] = useState('')
   const [replyTo, setReplyTo] = useState<number | null>(null)
@@ -104,7 +112,6 @@ export default function CommentThread({
       })
       setContent('')
       setReplyTo(null)
-      // Reset textarea height after clearing
       if (textareaRef.current) {
         textareaRef.current.style.height = 'auto'
       }
@@ -114,8 +121,8 @@ export default function CommentThread({
   }
 
   function handleReply(parentId: number) {
+    if (readOnly) return
     setReplyTo(parentId)
-    // Focus the input
     document.getElementById('comment-input')?.focus()
   }
 
@@ -125,60 +132,69 @@ export default function CommentThread({
       <div className="flex flex-col gap-4">
         {comments.length === 0 ? (
           <p className="py-6 text-center text-sm text-paper-muted">
-            No comments yet. Start the conversation!
+            {readOnly
+              ? 'No comments were added to this ticket.'
+              : 'No comments yet. Start the conversation!'}
           </p>
         ) : (
           comments.map((c) => (
-            <CommentItem key={c.id} comment={c} onReply={handleReply} />
+            <CommentItem key={c.id} comment={c} onReply={handleReply} readOnly={readOnly} />
           ))
         )}
       </div>
 
-      {/* Add comment */}
-      <div className="border-t border-line pt-4">
-        {replyTo && (
-          <div className="mb-2 flex items-center gap-2 text-xs text-paper-muted">
-            <Reply className="size-3" />
-            Replying to comment #{replyTo}
+      {/* Add comment — hidden when read-only, shows lock notice instead */}
+      {readOnly ? (
+        <div className="flex items-center gap-2 rounded-xl border border-line/50 bg-ink/40 px-4 py-3 text-xs text-paper-muted">
+          <Lock className="size-3.5 shrink-0" />
+          <span>This ticket is closed. New comments cannot be added.</span>
+        </div>
+      ) : (
+        <div className="border-t border-line pt-4">
+          {replyTo && (
+            <div className="mb-2 flex items-center gap-2 text-xs text-paper-muted">
+              <Reply className="size-3" />
+              Replying to comment #{replyTo}
+              <button
+                type="button"
+                onClick={() => setReplyTo(null)}
+                className="font-medium text-red-400 hover:underline"
+              >
+                Cancel
+              </button>
+            </div>
+          )}
+          <div className="flex items-end gap-2">
+            <textarea
+              ref={textareaRef}
+              id="comment-input"
+              value={content}
+              onChange={(e) => {
+                setContent(e.target.value)
+                autoGrow()
+              }}
+              placeholder="Write a comment…"
+              rows={2}
+              style={{ overflow: 'hidden', resize: 'none' }}
+              className="flex-1 rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none placeholder:text-paper-muted/60 focus:border-brand focus:shadow-[0_0_0_4px_rgba(228,55,28,0.15)]"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit()
+              }}
+            />
             <button
               type="button"
-              onClick={() => setReplyTo(null)}
-              className="font-medium text-red-400 hover:underline"
+              onClick={submit}
+              disabled={loading || !content.trim()}
+              className="rounded-xl bg-brand px-4 py-3 text-sm font-semibold text-paper transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50"
             >
-              Cancel
+              {loading ? <Spinner size="sm" /> : <Send className="size-4" />}
             </button>
           </div>
-        )}
-        <div className="flex items-end gap-2">
-          <textarea
-            ref={textareaRef}
-            id="comment-input"
-            value={content}
-            onChange={(e) => {
-              setContent(e.target.value)
-              autoGrow()
-            }}
-            placeholder="Write a comment…"
-            rows={2}
-            style={{ overflow: 'hidden', resize: 'none' }}
-            className="flex-1 rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none placeholder:text-paper-muted/60 focus:border-brand focus:shadow-[0_0_0_4px_rgba(228,55,28,0.15)]"
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) submit()
-            }}
-          />
-          <button
-            type="button"
-            onClick={submit}
-            disabled={loading || !content.trim()}
-            className="rounded-xl bg-brand px-4 py-3 text-sm font-semibold text-paper transition-all hover:scale-[1.02] active:scale-95 disabled:opacity-50"
-          >
-            {loading ? <Spinner size="sm" /> : <Send className="size-4" />}
-          </button>
+          <p className="mt-1 text-[11px] text-paper-muted">
+            Press Ctrl+Enter to send
+          </p>
         </div>
-        <p className="mt-1 text-[11px] text-paper-muted">
-          Press Ctrl+Enter to send
-        </p>
-      </div>
+      )}
     </div>
   )
 }

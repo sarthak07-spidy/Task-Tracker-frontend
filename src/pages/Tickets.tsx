@@ -11,12 +11,20 @@ import {
   ChevronRight,
   Info,
   CheckCircle2,
+  XCircle,
   User,
 } from 'lucide-react'
 import api from '../lib/api'
 import { useAuth } from '../context/AuthContext'
 import type { ApiResponse, Ticket, TicketFilters as FiltersType, Project } from '../lib/types'
-import { DEFAULT_PAGE_SIZE, TicketStatusLabel, PriorityLabel, CategoryLabel } from '../lib/constants'
+import {
+  DEFAULT_PAGE_SIZE,
+  TicketStatusLabel,
+  PriorityLabel,
+  CategoryLabel,
+  isTicketCompleted,
+  isTicketRejected,
+} from '../lib/constants'
 import TicketCard from '../components/tickets/TicketCard'
 import TicketFilters from '../components/tickets/TicketFilters'
 import ApprovalPanel from '../components/tickets/ApprovalPanel'
@@ -40,7 +48,9 @@ export default function Tickets() {
 
   const [projects, setProjects] = useState<Project[]>([])
   const [tickets, setTickets] = useState<Ticket[]>([])
-  const [ticketScope, setTicketScope] = useState<'all' | 'assigned_to_me' | 'raised_by_me'>('all')
+  const [ticketScope, setTicketScope] = useState<
+    'all' | 'assigned_to_me' | 'raised_by_me' | 'completed' | 'rejected'
+  >('all')
   const [totalCount, setTotalCount] = useState(0)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
@@ -104,7 +114,7 @@ export default function Tickets() {
       const params: Record<string, string | number> = {
         projectId: selectedProjectId,
         pageNumber: filters.pageNumber ?? 1,
-        pageSize: filters.pageSize ?? 10,
+        pageSize: filters.pageSize ?? 50,
       }
       if (filters.status) params.status = filters.status
       if (filters.priority) params.priority = filters.priority
@@ -113,20 +123,79 @@ export default function Tickets() {
       if (filters.assignedToUserId)
         params.assignedToUserId = filters.assignedToUserId
 
-      const { data } = await api.get('/tickets', { params })
-      const result = (data?.success && data?.data) ? data.data : data
+      // Concurrently query main tickets, completed tickets, and rejected tickets
+      const [mainRes, completedRes, rejectedRes] = await Promise.allSettled([
+        api.get('/tickets', { params }),
+        api.get('/Tickets/completed', {
+          params: {
+            projectId: selectedProjectId,
+            ...(filters.priority ? { Priority: filters.priority } : {}),
+            ...(filters.category ? { Category: filters.category } : {}),
+            ...(filters.assignedToUserId ? { AssignedToUserId: filters.assignedToUserId } : {}),
+          },
+        }),
+        api.get('/Tickets/rejected', {
+          params: {
+            projectId: selectedProjectId,
+          },
+        }),
+      ])
 
-      let rawList: Ticket[] = []
-      if (Array.isArray(result)) {
-        rawList = result
-      } else if (result?.tickets && Array.isArray(result.tickets)) {
-        rawList = result.tickets
+      const extractList = (res: PromiseSettledResult<{ data: unknown }>): Ticket[] => {
+        if (res.status !== 'fulfilled' || !res.value?.data) return []
+        const d = res.value.data as { success?: boolean; data?: unknown; tickets?: Ticket[] }
+        const result = (d?.success && d?.data) ? d.data : d
+        if (Array.isArray(result)) return result as Ticket[]
+        if (
+          result &&
+          typeof result === 'object' &&
+          'tickets' in result &&
+          Array.isArray((result as { tickets?: unknown }).tickets)
+        ) {
+          return (result as { tickets: Ticket[] }).tickets
+        }
+        return []
       }
 
-      // Strictly ensure tickets belong to the selected project
+      const rawList = extractList(mainRes)
+      const completedList = extractList(completedRes)
+      const rejectedList = extractList(rejectedRes)
+
+      // Deduplicate and merge tickets
+      const ticketMap = new Map<number, Ticket>()
+
+      rawList.forEach((t) => {
+        if (t && t.id) ticketMap.set(t.id, t)
+      })
+
+      completedList.forEach((t) => {
+        if (t && t.id) {
+          const prev = ticketMap.get(t.id)
+          ticketMap.set(t.id, {
+            ...prev,
+            ...t,
+            status: t.status || (prev?.status ?? 'Completed'),
+          })
+        }
+      })
+
+      rejectedList.forEach((t) => {
+        if (t && t.id) {
+          const prev = ticketMap.get(t.id)
+          ticketMap.set(t.id, {
+            ...prev,
+            ...t,
+            status: t.status || (prev?.status ?? 'Rejected'),
+          })
+        }
+      })
+
+      const allMerged = Array.from(ticketMap.values())
+
+      // Strictly ensure tickets belong to the selected project if ticket has projectId
       const projectFiltered = selectedProjectId
-        ? rawList.filter((t) => !t.projectId || Number(t.projectId) === Number(selectedProjectId))
-        : rawList
+        ? allMerged.filter((t) => !t.projectId || Number(t.projectId) === Number(selectedProjectId))
+        : allMerged
 
       setTickets(projectFiltered)
       setTotalCount(projectFiltered.length)
@@ -134,7 +203,6 @@ export default function Tickets() {
       const msg =
         (err as { response?: { data?: { message?: string } } })?.response
           ?.data?.message ?? ''
-      // If error is the backend SQL column issue, show friendly guidance
       if (msg.includes('ApprovalRemark') || msg.includes('column name')) {
         setError(
           'Tickets for this project are being synchronized on the server. You can create a new ticket using the button above.',
@@ -181,6 +249,14 @@ export default function Tickets() {
     return tickets.filter((t) => t.createdByUserId === user.userId || t.assignedByUserId === user.userId).length
   }, [tickets, user])
 
+  const completedCount = useMemo(() => {
+    return tickets.filter((t) => isTicketCompleted(t)).length
+  }, [tickets])
+
+  const rejectedCount = useMemo(() => {
+    return tickets.filter((t) => isTicketRejected(t)).length
+  }, [tickets])
+
   // Local search & criteria filter
   const displayedTickets = useMemo(() => {
     return tickets.filter((t) => {
@@ -189,13 +265,21 @@ export default function Tickets() {
         return false
       }
 
-      // 1. Scope filter (All / Assigned to Me / Raised by Me)
+      // 1. Scope filter (All / Assigned to Me / Raised by Me / Completed / Rejected)
       if (ticketScope === 'assigned_to_me') {
         if (!user || t.assignedToUserId !== user.userId) {
           return false
         }
       } else if (ticketScope === 'raised_by_me') {
         if (!user || (t.createdByUserId !== user.userId && t.assignedByUserId !== user.userId)) {
+          return false
+        }
+      } else if (ticketScope === 'completed') {
+        if (!isTicketCompleted(t)) {
+          return false
+        }
+      } else if (ticketScope === 'rejected') {
+        if (!isTicketRejected(t)) {
           return false
         }
       }
@@ -217,7 +301,14 @@ export default function Tickets() {
       // 3. Status filter
       if (filters.status) {
         const label = TicketStatusLabel[t.status] || String(t.status)
-        if (label.toLowerCase() !== filters.status.toLowerCase()) {
+        const f = filters.status.toLowerCase()
+        const isComp = isTicketCompleted(t)
+        const isRej = isTicketRejected(t)
+        if ((f === 'completed' || f === 'closed') && isComp) {
+          // match completed
+        } else if (f === 'rejected' && isRej) {
+          // match rejected
+        } else if (label.toLowerCase() !== f) {
           return false
         }
       }
@@ -364,12 +455,12 @@ export default function Tickets() {
 
           {/* Search & Filters */}
           <div className="flex flex-col gap-3 rounded-2xl border border-line bg-ink-soft p-4">
-            {/* 3-Way Scope Toggle: All / Assigned to Me / Raised by Me */}
+            {/* 5-Way Scope Toggle: All / Assigned to Me / Raised by Me / Completed / Rejected */}
             <div className="flex flex-wrap items-center gap-2 border-b border-line pb-3">
               <button
                 type="button"
                 onClick={() => setTicketScope('all')}
-                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all ${
+                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
                   ticketScope === 'all'
                     ? 'bg-brand text-paper shadow-md shadow-brand/20'
                     : 'border border-line bg-ink text-paper-muted hover:text-paper hover:border-paper/20'
@@ -382,7 +473,7 @@ export default function Tickets() {
               <button
                 type="button"
                 onClick={() => setTicketScope('assigned_to_me')}
-                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all ${
+                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
                   ticketScope === 'assigned_to_me'
                     ? 'bg-brand text-paper shadow-md shadow-brand/20'
                     : 'border border-line bg-ink text-paper-muted hover:text-paper hover:border-paper/20'
@@ -395,7 +486,7 @@ export default function Tickets() {
               <button
                 type="button"
                 onClick={() => setTicketScope('raised_by_me')}
-                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all ${
+                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
                   ticketScope === 'raised_by_me'
                     ? 'bg-brand text-paper shadow-md shadow-brand/20'
                     : 'border border-line bg-ink text-paper-muted hover:text-paper hover:border-paper/20'
@@ -403,6 +494,32 @@ export default function Tickets() {
               >
                 <Plus className="size-3.5" />
                 Raised by Me ({raisedByMeCount})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTicketScope('completed')}
+                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                  ticketScope === 'completed'
+                    ? 'bg-emerald-600 text-paper shadow-md shadow-emerald-950/40'
+                    : 'border border-line bg-ink text-emerald-400/90 hover:text-emerald-300 hover:border-emerald-500/30'
+                }`}
+              >
+                <CheckCircle2 className="size-3.5" />
+                Completed ({completedCount})
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setTicketScope('rejected')}
+                className={`flex items-center gap-2 rounded-xl px-3.5 py-2 text-xs font-semibold transition-all cursor-pointer ${
+                  ticketScope === 'rejected'
+                    ? 'bg-red-600 text-paper shadow-md shadow-red-950/40'
+                    : 'border border-line bg-ink text-red-400/90 hover:text-red-300 hover:border-red-500/30'
+                }`}
+              >
+                <XCircle className="size-3.5" />
+                Rejected ({rejectedCount})
               </button>
             </div>
 
@@ -423,7 +540,7 @@ export default function Tickets() {
                 <button
                   type="button"
                   onClick={() => setSearchQuery('')}
-                  className="rounded-xl border border-line px-3 py-2 text-xs text-paper-muted hover:text-paper"
+                  className="rounded-xl border border-line px-3 py-2 text-xs text-paper-muted hover:text-paper cursor-pointer"
                 >
                   Clear Search
                 </button>
@@ -438,12 +555,24 @@ export default function Tickets() {
             <PageLoader />
           ) : displayedTickets.length === 0 ? (
             <EmptyState
-              icon={ticketScope === 'assigned_to_me' ? User : TicketIcon}
+              icon={
+                ticketScope === 'assigned_to_me'
+                  ? User
+                  : ticketScope === 'completed'
+                  ? CheckCircle2
+                  : ticketScope === 'rejected'
+                  ? XCircle
+                  : TicketIcon
+              }
               title={
                 ticketScope === 'assigned_to_me'
                   ? 'No tickets assigned to you'
                   : ticketScope === 'raised_by_me'
                   ? 'No tickets raised by you'
+                  : ticketScope === 'completed'
+                  ? 'No completed tickets yet'
+                  : ticketScope === 'rejected'
+                  ? 'No rejected tickets'
                   : searchQuery || filters.status || filters.priority || filters.category || filters.sprintPhase
                   ? 'No matching tickets found'
                   : 'No tickets found for this project'
@@ -453,15 +582,19 @@ export default function Tickets() {
                   ? 'You do not have any tickets assigned to you in this project.'
                   : ticketScope === 'raised_by_me'
                   ? 'You haven’t created any tickets in this project yet.'
+                  : ticketScope === 'completed'
+                  ? 'Tickets that have been completed and closed will appear here.'
+                  : ticketScope === 'rejected'
+                  ? 'Tickets rejected by assignees will appear here.'
                   : searchQuery || filters.status || filters.priority || filters.category || filters.sprintPhase
                   ? 'Try clearing or changing the filters to see more tickets.'
                   : 'Create the first ticket for this project to get started.'
               }
               action={
-                ticketScope === 'assigned_to_me' ? undefined : (
+                ticketScope === 'assigned_to_me' || ticketScope === 'completed' || ticketScope === 'rejected' ? undefined : (
                   <Link
                     to={`/app/tickets/new?projectId=${selectedProjectId}`}
-                    className="mt-2 flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-brand/35"
+                    className="mt-2 flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-brand/35 cursor-pointer"
                   >
                     <Plus className="size-4" />
                     Create Ticket

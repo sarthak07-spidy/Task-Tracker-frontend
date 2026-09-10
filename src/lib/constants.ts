@@ -27,7 +27,9 @@ export const TicketStatusLabel: Record<string | number, string> = {
   InReview: 'In Review',
   Completed: 'Completed',
   Closed: 'Closed',
+  Close: 'Closed',
   Rejected: 'Rejected',
+  Reject: 'Rejected',
   OnHold: 'On Hold',
   1: 'Open',
   2: 'In Progress',
@@ -44,7 +46,9 @@ export const TicketStatusKey: Record<string | number, string> = {
   InReview: 'InReview',
   Completed: 'Completed',
   Closed: 'Closed',
+  Close: 'Closed',
   Rejected: 'Rejected',
+  Reject: 'Rejected',
   OnHold: 'OnHold',
   1: 'Open',
   2: 'InProgress',
@@ -60,14 +64,16 @@ export const TicketStatusColor: Record<string | number, string> = {
   InProgress: '#f59e0b', // amber
   InReview: '#a855f7',   // purple
   Completed: '#22c55e',  // green
-  Closed: '#6b7280',     // gray
+  Closed: '#10b981',     // emerald green for completed/closed
+  Close: '#10b981',
   Rejected: '#ef4444',   // red
+  Reject: '#ef4444',
   OnHold: '#f97316',     // orange
   1: '#3b82f6',
   2: '#f59e0b',
   3: '#a855f7',
   4: '#22c55e',
-  5: '#6b7280',
+  5: '#10b981',
   6: '#ef4444',
   7: '#f97316',
 }
@@ -77,16 +83,53 @@ export const TicketStatusBg: Record<string | number, string> = {
   InProgress: 'rgba(245,158,11,0.15)',
   InReview: 'rgba(168,85,247,0.15)',
   Completed: 'rgba(34,197,94,0.15)',
-  Closed: 'rgba(107,114,128,0.15)',
+  Closed: 'rgba(16,185,129,0.15)',
+  Close: 'rgba(16,185,129,0.15)',
   Rejected: 'rgba(239,68,68,0.15)',
+  Reject: 'rgba(239,68,68,0.15)',
   OnHold: 'rgba(249,115,22,0.15)',
   1: 'rgba(59,130,246,0.15)',
   2: 'rgba(245,158,11,0.15)',
   3: 'rgba(168,85,247,0.15)',
   4: 'rgba(34,197,94,0.15)',
-  5: 'rgba(107,114,128,0.15)',
+  5: 'rgba(16,185,129,0.15)',
   6: 'rgba(239,68,68,0.15)',
   7: 'rgba(249,115,22,0.15)',
+}
+
+export function isTicketCompleted(ticketOrStatus: unknown): boolean {
+  if (!ticketOrStatus) return false
+  const statusVal =
+    typeof ticketOrStatus === 'object' && ticketOrStatus !== null && 'status' in ticketOrStatus
+      ? (ticketOrStatus as { status?: unknown; completedAt?: unknown }).status
+      : ticketOrStatus
+  const s = String(statusVal ?? '').toLowerCase().trim()
+  const isCompletedByDate =
+    typeof ticketOrStatus === 'object' &&
+    ticketOrStatus !== null &&
+    'completedAt' in ticketOrStatus &&
+    Boolean((ticketOrStatus as { completedAt?: unknown }).completedAt)
+
+  return (
+    s === 'completed' ||
+    s === 'closed' ||
+    s === 'close' ||
+    s === '4' ||
+    s === '5' ||
+    statusVal === 4 ||
+    statusVal === 5 ||
+    isCompletedByDate
+  )
+}
+
+export function isTicketRejected(ticketOrStatus: unknown): boolean {
+  if (!ticketOrStatus) return false
+  const statusVal =
+    typeof ticketOrStatus === 'object' && ticketOrStatus !== null && 'status' in ticketOrStatus
+      ? (ticketOrStatus as { status?: unknown }).status
+      : ticketOrStatus
+  const s = String(statusVal ?? '').toLowerCase().trim()
+  return s === 'rejected' || s === 'reject' || s === '6' || statusVal === 6
 }
 
 // ─── Priority ───────────────────────────────────────────────────────────────
