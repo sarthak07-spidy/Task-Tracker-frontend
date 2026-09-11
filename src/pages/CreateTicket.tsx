@@ -4,12 +4,14 @@ import { motion } from 'framer-motion'
 import { ArrowLeft } from 'lucide-react'
 import api from '../lib/api'
 import { useToast } from '../components/ui/Toast'
+import { useAuth } from '../context/AuthContext'
 import {
+  Priority,
   PriorityLabel,
+  Category,
   CategoryLabel,
 } from '../lib/constants'
 import type {
-  ApiResponse,
   CreateTicketPayload,
   Ticket,
   Project,
@@ -23,6 +25,7 @@ const ease = [0.22, 1, 0.36, 1] as const
 export default function CreateTicket() {
   const navigate = useNavigate()
   const { toast } = useToast()
+  const { user } = useAuth()
   const [searchParams] = useSearchParams()
 
   const queryProjectId = searchParams.get('projectId')
@@ -81,52 +84,20 @@ export default function CreateTicket() {
 
       setMembersLoading(true)
 
-      // Fetch employee directory (/SuperAdmin/users or /Users/employees) to enrich member IDs & names
-      const employeeMap = new Map<string, { id: number; fullName: string; designation?: string; department?: string }>()
-      try {
-        let empList: Array<Record<string, unknown>> = []
-        try {
-          const empRes = await api.get('/SuperAdmin/users')
-          const d = empRes.data?.success ? empRes.data.data : empRes.data
-          if (Array.isArray(d)) empList = d
-        } catch {
-          const empRes2 = await api.get('/Users/employees')
-          const d2 = empRes2.data?.success ? empRes2.data.data : empRes2.data
-          if (Array.isArray(d2)) empList = d2
-        }
-        empList.forEach((e) => {
-          const email = ((e.email as string) || '').toLowerCase().trim()
-          const id = Number(e.id ?? e.userId)
-          if (email && !isNaN(id) && id > 0) {
-            employeeMap.set(email, {
-              id,
-              fullName:
-                (e.fullName as string) ||
-                `${(e.firstName as string) ?? ''} ${(e.lastName as string) ?? ''}`.trim(),
-              designation: e.designation as string,
-              department: e.department as string,
-            })
-          }
-        })
-      } catch {
-        // ignore directory load failure
-      }
-
       const mapMember = (m: Record<string, unknown>, index: number): ProjectMember => {
         const email = ((m.email as string) || (m.Email as string) || '').trim()
-        const emailKey = email.toLowerCase()
-        const emp = employeeMap.get(emailKey)
 
-        // Raw ID candidates from member payload
-        const rawId = m.userId ?? m.UserId ?? m.id ?? m.Id ?? m.user_id
-        const numId = rawId !== undefined && rawId !== null ? Number(rawId) : NaN
+        // Prioritize UserId / userId (Users table foreign key) over Id / id (ProjectMembers primary key)
+        const rawUserId = m.userId ?? m.UserId ?? m.user_id
+        const rawMemberId = m.id ?? m.Id
+        const numUserId = rawUserId !== undefined && rawUserId !== null ? Number(rawUserId) : NaN
+        const numMemberId = rawMemberId !== undefined && rawMemberId !== null ? Number(rawMemberId) : NaN
 
-        // Prefer employee directory ID if valid, then valid positive numId, then email, then index
         let finalId: number | string = ''
-        if (emp && emp.id > 0) {
-          finalId = emp.id
-        } else if (!isNaN(numId) && numId > 0) {
-          finalId = numId
+        if (!isNaN(numUserId) && numUserId > 0) {
+          finalId = numUserId
+        } else if (!isNaN(numMemberId) && numMemberId > 0) {
+          finalId = numMemberId
         } else if (email) {
           finalId = email
         } else {
@@ -134,12 +105,11 @@ export default function CreateTicket() {
         }
 
         const name =
-          emp?.fullName ||
           (
-            (m.userName as string) ||
-            (m.UserName as string) ||
             (m.fullName as string) ||
             (m.FullName as string) ||
+            (m.userName as string) ||
+            (m.UserName as string) ||
             `${(m.firstName as string) ?? (m.FirstName as string) ?? ''} ${(m.lastName as string) ?? (m.LastName as string) ?? ''}`.trim()
           ).trim() ||
           email ||
@@ -154,10 +124,10 @@ export default function CreateTicket() {
             (m.role as string) ||
             (m.Role as string) ||
             (m.designation as string) ||
-            emp?.designation ||
+            (m.Designation as string) ||
             'Member',
-          designation: (m.designation as string) || emp?.designation || '',
-          department: (m.department as string) || emp?.department || '',
+          designation: (m.designation as string) || (m.Designation as string) || '',
+          department: (m.department as string) || (m.Department as string) || '',
         }
       }
 
@@ -167,6 +137,10 @@ export default function CreateTicket() {
         const seen = new Set<string>()
         for (const item of mapped) {
           const key = String(item.userId || item.email)
+          // User cannot allot ticket to themselves
+          if (user && (Number(item.userId) === Number(user.userId) || (item.email && item.email.toLowerCase() === user.email.toLowerCase()))) {
+            continue
+          }
           if (!seen.has(key)) {
             seen.add(key)
             unique.push(item)
@@ -189,7 +163,7 @@ export default function CreateTicket() {
         console.warn('Assignable members failed, trying fallback', err)
       }
 
-      // 2. FALLBACK: general /members endpoint (includes everyone)
+      // 2. FALLBACK: general /members endpoint (excludes logged-in user)
       try {
         const res = await api.get(`/projects/${projectId}/members`)
         const data = res?.data
@@ -199,20 +173,34 @@ export default function CreateTicket() {
           setMembersLoading(false)
           return
         }
-      } catch (err) {
-        console.warn('Direct project members also failed', err)
+      } catch {
+        // try fallbacks
       }
 
-      // 3. LAST RESORT: localStorage cache
+      // 3. FALLBACK: /Projects/{projectId}/members
       try {
-        const cached = localStorage.getItem(`t_project_members_${projectId}`)
-        if (cached) {
-          const parsed = JSON.parse(cached)
-          if (Array.isArray(parsed) && parsed.length > 0) {
-            setMembers(processMembers(parsed))
-            setMembersLoading(false)
-            return
-          }
+        const res = await api.get(`/Projects/${projectId}/members`)
+        const data = res?.data
+        const raw = (data?.success && data?.data) ? data.data : (Array.isArray(data) ? data : data?.members || data?.data || [])
+        if (Array.isArray(raw) && raw.length > 0) {
+          setMembers(processMembers(raw))
+          setMembersLoading(false)
+          return
+        }
+      } catch {
+        // try fallbacks
+      }
+
+      // 4. FALLBACK: /Projects/{id} project details
+      try {
+        const res = await api.get(`/Projects/${projectId}`)
+        const data = res?.data
+        const p = (data?.success && data?.data) ? data.data : data
+        const pMembers = p?.members || p?.teamMembers || p?.projectMembers || []
+        if (Array.isArray(pMembers) && pMembers.length > 0) {
+          setMembers(processMembers(pMembers))
+          setMembersLoading(false)
+          return
         }
       } catch {
         // ignore
@@ -223,7 +211,7 @@ export default function CreateTicket() {
     }
 
     loadMembers()
-  }, [projectId])
+  }, [projectId, user])
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -257,45 +245,78 @@ export default function CreateTicket() {
 
     setLoading(true)
 
-    const payload: CreateTicketPayload = {
-      title: title.trim(),
-      description: description.trim(),
-      dueDate: new Date(dueDate).toISOString(),
-    }
-    if (projectId) payload.projectId = Number(projectId)
+    let finalAssignedId: number | null = null
     if (assignedToUserId) {
       const num = Number(assignedToUserId)
       if (!isNaN(num) && num > 0) {
-        payload.assignedToUserId = num
+        finalAssignedId = num
       } else {
         const found = members.find(
           (m) => String(m.userId) === String(assignedToUserId) || m.email === assignedToUserId,
         )
         const foundNum = found ? Number(found.userId) : NaN
         if (!isNaN(foundNum) && foundNum > 0) {
-          payload.assignedToUserId = foundNum
+          finalAssignedId = foundNum
         }
       }
     }
+
+    if (user && finalAssignedId && Number(finalAssignedId) === Number(user.userId)) {
+      toast('error', 'You cannot assign a ticket to yourself')
+      setLoading(false)
+      return
+    }
+
+    const payload: Record<string, unknown> = {
+      title: title.trim(),
+      description: description.trim(),
+      dueDate: new Date(dueDate).toISOString(),
+      projectId: Number(projectId),
+      assignedToUserId: finalAssignedId,
+    }
+
     if (priority) payload.priority = priority
     if (category) payload.category = category
-    if (userStoryId) payload.userStoryId = userStoryId
-    if (sprintPhase) payload.sprintPhase = sprintPhase
-    if (tags) payload.tags = tags
+    if (userStoryId) payload.userStoryId = userStoryId.trim()
+    if (sprintPhase) payload.sprintPhase = sprintPhase.trim()
+    if (tags) payload.tags = tags.trim()
     if (estimatedHours) payload.estimatedHours = Number(estimatedHours)
 
     try {
-      const { data } = await api.post<ApiResponse<Ticket>>('/tickets', payload)
-      if (data.success) {
-        toast('success', 'Ticket created!')
-        navigate(`/app/tickets/${data.data.id}`)
+      let res
+      try {
+        res = await api.post('/tickets', payload)
+      } catch (e: unknown) {
+        const status = (e as { response?: { status?: number } })?.response?.status
+        if (status === 404 || status === 405) {
+          res = await api.post('/Tickets', payload)
+        } else {
+          throw e
+        }
+      }
+      const resData = res?.data?.success && res?.data?.data ? res.data.data : res?.data
+      toast('success', 'Ticket created successfully!')
+      if (resData && (resData as { id?: number }).id) {
+        navigate(`/app/tickets/${(resData as { id: number }).id}`)
+      } else {
+        navigate('/app/tickets')
       }
     } catch (err: unknown) {
-      toast(
-        'error',
-        (err as { response?: { data?: { message?: string } } })?.response?.data
-          ?.message ?? 'Failed to create ticket',
-      )
+      const resData = (err as { response?: { data?: unknown } })?.response?.data
+      let msg = ''
+      if (typeof resData === 'string') {
+        msg = resData
+      } else if (resData && typeof resData === 'object') {
+        const d = resData as Record<string, unknown>
+        msg = ((d.message as string) || (d.Message as string) || '').trim()
+        if (!msg && d.errors && typeof d.errors === 'object') {
+          msg = Object.values(d.errors).flat().join(' | ')
+        }
+        if (!msg && d.title) {
+          msg = d.title as string
+        }
+      }
+      toast('error', msg || 'Failed to create ticket')
     } finally {
       setLoading(false)
     }
@@ -419,7 +440,7 @@ export default function CreateTicket() {
         {/* Assignee — z-50, uses div NOT FormField(label) to avoid double-click on button */}
         <div className="relative z-50 flex flex-col gap-1.5">
           <span className="text-xs font-medium uppercase tracking-[0.15em] text-paper-muted">
-            Assign To (Project Members Only)
+            Assign To <span className="text-red-400">*</span>
           </span>
           <SearchableSelect
             options={members.map((m) => ({
@@ -437,7 +458,7 @@ export default function CreateTicket() {
                 ? 'Loading project members...'
                 : members.length === 0
                 ? 'No members in this project yet'
-                : 'Search and select project member...'
+                : 'Select a team member...'
             }
             searchPlaceholder="Type member name..."
             disabled={!projectId || membersLoading}
@@ -474,7 +495,7 @@ export default function CreateTicket() {
               className="w-full rounded-xl border border-line bg-ink/60 px-4 py-3 text-sm text-paper outline-none placeholder:text-paper-muted/60 focus:border-brand"
             />
           </FormField>
-          <FormField label="Estimated Hours">
+          <FormField label="Estimated Hours (Optional)">
             <input
               type="number"
               min="0"

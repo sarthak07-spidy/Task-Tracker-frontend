@@ -377,15 +377,13 @@ export default function Tickets() {
           </p>
         </div>
 
-        {selectedProjectId && ticketScope !== 'assigned_to_me' && (
-          <Link
-            to={`/app/tickets/new?projectId=${selectedProjectId}`}
-            className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-brand/35 transition-all hover:scale-[1.02] active:scale-95"
-          >
-            <Plus className="size-4" />
-            New Ticket
-          </Link>
-        )}
+        <Link
+          to={selectedProjectId ? `/app/tickets/new?projectId=${selectedProjectId}` : '/app/tickets/new'}
+          className="flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-brand/35 transition-all hover:scale-[1.02] active:scale-95 cursor-pointer"
+        >
+          <Plus className="size-4" />
+          New Ticket
+        </Link>
       </motion.div>
 
       {/* ─── Project Selector Bar ────────────────────────────────────────────── */}
@@ -622,15 +620,13 @@ export default function Tickets() {
                   : 'Create the first ticket for this project to get started.'
               }
               action={
-                ticketScope === 'assigned_to_me' || ticketScope === 'completed' || ticketScope === 'rejected' ? undefined : (
-                  <Link
-                    to={`/app/tickets/new?projectId=${selectedProjectId}`}
-                    className="mt-2 flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-brand/35 cursor-pointer"
-                  >
-                    <Plus className="size-4" />
-                    Create Ticket
-                  </Link>
-                )
+                <Link
+                  to={selectedProjectId ? `/app/tickets/new?projectId=${selectedProjectId}` : '/app/tickets/new'}
+                  className="mt-2 flex items-center gap-2 rounded-xl bg-brand px-4 py-2.5 text-sm font-semibold text-paper shadow-lg shadow-brand/35 cursor-pointer"
+                >
+                  <Plus className="size-4" />
+                  Create Ticket
+                </Link>
               }
             />
           ) : (
